@@ -19,6 +19,7 @@ import json
 import os
 import re
 import time
+import traceback
 from pathlib import Path
 from typing import Optional, Tuple, Any
 
@@ -186,7 +187,9 @@ def run_tts_inference(
         return None, "❌ Error: No audio generated"
 
     except Exception as e:
-        return None, f"❌ Error: {str(e)}"
+        error_msg = f"❌ Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+        print(error_msg)  # Print to console for debugging
+        return None, error_msg
 
 
 def build_tts_tab(args):
@@ -276,7 +279,9 @@ def run_ttsd_inference(
         return None, "❌ Error: No audio generated"
 
     except Exception as e:
-        return None, f"❌ Error: {str(e)}"
+        error_msg = f"❌ Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+        print(error_msg)  # Print to console for debugging
+        return None, error_msg
 
 
 def build_ttsd_tab(args):
@@ -371,7 +376,9 @@ def run_voice_gen_inference(
         return None, "❌ Error: No audio generated"
 
     except Exception as e:
-        return None, f"❌ Error: {str(e)}"
+        error_msg = f"❌ Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+        print(error_msg)  # Print to console for debugging
+        return None, error_msg
 
 
 def build_voice_gen_tab(args):
@@ -464,7 +471,9 @@ def run_sound_effect_inference(
         return None, "❌ Error: No audio generated"
 
     except Exception as e:
-        return None, f"❌ Error: {str(e)}"
+        error_msg = f"❌ Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+        print(error_msg)  # Print to console for debugging
+        return None, error_msg
 
 
 def build_sound_effect_tab(args):
