@@ -631,7 +631,8 @@ def main():
     parser = argparse.ArgumentParser(description="MOSS-TTS Unified Interface")
     parser.add_argument("--device", type=str, default="cuda:0", help="Device to use (e.g., cuda:0, cpu)")
     parser.add_argument("--attn_implementation", type=str, default="auto", help="Attention implementation")
-    parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind to")
+    _default_host = "127.0.0.1" if sys.platform == "win32" else "0.0.0.0"
+    parser.add_argument("--host", type=str, default=_default_host, help="Host to bind to")
     parser.add_argument("--port", type=int, default=7860, help="Port to bind to")
     parser.add_argument("--share", action="store_true", help="Create a public share link")
     args = parser.parse_args()
