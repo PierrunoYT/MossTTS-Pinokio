@@ -30,6 +30,23 @@ import gradio as gr
 import numpy as np
 import torch
 import torchaudio
+
+# Monkey-patch os.path.join to prevent backslash conversion for HuggingFace repo IDs
+import os.path as _original_path
+_original_join = _original_path.join
+
+def _patched_join(path, *paths):
+    """Patched os.path.join that preserves forward slashes in HuggingFace repo IDs."""
+    result = _original_join(path, *paths)
+    # If it looks like a HuggingFace repo ID (contains 'OpenMOSS-Team' or similar patterns),
+    # keep forward slashes
+    if isinstance(result, str) and '/' in path and not _original_path.exists(result):
+        result = result.replace('\\', '/')
+    return result
+
+_original_path.join = _patched_join
+os.path.join = _patched_join
+
 from transformers import AutoModel, AutoProcessor
 
 # Disable the broken cuDNN SDPA backend
