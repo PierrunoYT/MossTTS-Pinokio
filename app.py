@@ -82,7 +82,8 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
     device = torch.device(device_str if torch.cuda.is_available() else "cpu")
     dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
 
-    model_path = MODELS[model_key]
+    # Ensure forward slashes for HuggingFace repo IDs (Windows compatibility)
+    model_path = MODELS[model_key].replace("\\", "/")
     print(f"Loading {model_key} from {model_path}...")
 
     resolved_attn = resolve_attn_implementation(attn_implementation, device, dtype)
@@ -90,7 +91,8 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
     # Load processor
     processor_kwargs = {"trust_remote_code": True}
     if model_key == "ttsd":
-        processor_kwargs["codec_path"] = CODEC_MODEL_PATH
+        # Ensure forward slashes for codec path too
+        processor_kwargs["codec_path"] = CODEC_MODEL_PATH.replace("\\", "/")
 
     processor = AutoProcessor.from_pretrained(model_path, **processor_kwargs)
 
