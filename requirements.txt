@@ -1,0 +1,21 @@
+# MOSS-TTS - torch/torchaudio installed by torch.js
+
+# Transformers & Model Loading
+transformers==5.0.0
+safetensors==0.6.2
+
+# Web Interface
+gradio>=5.0.0,<7.0.0
+gradio-client>=2.0.0
+
+# Audio Processing
+librosa==0.11.0
+scipy>=1.10.0
+
+# Utilities
+numpy>=2.0.0
+orjson>=3.9.0
+tqdm>=4.65.0
+PyYAML>=6.0
+einops>=0.8.0
+tiktoken>=0.12.0
