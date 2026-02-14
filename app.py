@@ -30,24 +30,23 @@ import gradio as gr
 import numpy as np
 import torch
 import torchaudio
+from transformers import AutoModel, AutoProcessor, AutoConfig, AutoTokenizer
 
-# Monkey-patch os.path.join to prevent backslash conversion for HuggingFace repo IDs
-import os.path as _original_path
-_original_join = _original_path.join
+# Comprehensive patch: wrap all from_pretrained methods to normalize repo IDs
+def _wrap_from_pretrained(original_method):
+    """Wrapper that normalizes repo IDs before calling from_pretrained."""
+    def wrapper(pretrained_model_name_or_path, *args, **kwargs):
+        # Normalize repo ID: convert backslashes to forward slashes
+        if isinstance(pretrained_model_name_or_path, str) and not os.path.exists(pretrained_model_name_or_path):
+            pretrained_model_name_or_path = pretrained_model_name_or_path.replace("\\", "/")
+        return original_method(pretrained_model_name_or_path, *args, **kwargs)
+    return wrapper
 
-def _patched_join(path, *paths):
-    """Patched os.path.join that preserves forward slashes in HuggingFace repo IDs."""
-    result = _original_join(path, *paths)
-    # If it looks like a HuggingFace repo ID (string with forward slash, not an existing path),
-    # keep forward slashes
-    if isinstance(result, str) and isinstance(path, str) and '/' in path and not _original_path.exists(result):
-        result = result.replace('\\', '/')
-    return result
-
-_original_path.join = _patched_join
-os.path.join = _patched_join
-
-from transformers import AutoModel, AutoProcessor
+# Patch all Auto classes
+AutoModel.from_pretrained = classmethod(_wrap_from_pretrained(AutoModel.from_pretrained.__func__))
+AutoProcessor.from_pretrained = classmethod(_wrap_from_pretrained(AutoProcessor.from_pretrained.__func__))
+AutoConfig.from_pretrained = classmethod(_wrap_from_pretrained(AutoConfig.from_pretrained.__func__))
+AutoTokenizer.from_pretrained = classmethod(_wrap_from_pretrained(AutoTokenizer.from_pretrained.__func__))
 
 # Disable the broken cuDNN SDPA backend
 torch.backends.cuda.enable_cudnn_sdp(False)
