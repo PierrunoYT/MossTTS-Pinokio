@@ -38,9 +38,9 @@ _original_join = _original_path.join
 def _patched_join(path, *paths):
     """Patched os.path.join that preserves forward slashes in HuggingFace repo IDs."""
     result = _original_join(path, *paths)
-    # If it looks like a HuggingFace repo ID (contains 'OpenMOSS-Team' or similar patterns),
+    # If it looks like a HuggingFace repo ID (string with forward slash, not an existing path),
     # keep forward slashes
-    if isinstance(result, str) and '/' in path and not _original_path.exists(result):
+    if isinstance(result, str) and isinstance(path, str) and '/' in path and not _original_path.exists(result):
         result = result.replace('\\', '/')
     return result
 
