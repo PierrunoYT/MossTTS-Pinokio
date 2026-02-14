@@ -1,156 +1,158 @@
 # MOSS-TTS Unified Interface
 
-🎵 **All-in-One Gradio UI for the MOSS-TTS Family**
+A unified web interface combining all MOSS-TTS models into a single application with an intuitive tabbed interface.
 
-A unified web interface that combines all MOSS-TTS models into a single application with tabs.
+## Features
 
-## 🌟 Features
+**Voice Synthesis Models**
+- **MOSS-TTS** - High-fidelity voice cloning with zero-shot capability
+- **MOSS-TTSD** - Multi-speaker dialogue generation
+- **MOSS-VoiceGenerator** - Design voices from text descriptions
+- **MOSS-SoundEffect** - Generate environmental sounds and effects
 
-- **🎙️ MOSS-TTS** - High-fidelity voice cloning with zero-shot capability
-- **💬 MOSS-TTSD** - Multi-speaker dialogue generation
-- **🎨 MOSS-VoiceGenerator** - Design voices from text descriptions
-- **🔊 MOSS-SoundEffect** - Generate environmental sounds and effects
-- **📱 Single Interface** - All models accessible through tabs
-- **⚡ Smart Model Loading** - Models load on-demand to save memory
-- **🎨 Modern UI** - Clean, intuitive interface built with Gradio
+**Interface**
+- Single unified interface with tab-based navigation
+- Smart on-demand model loading to optimize memory usage
+- Modern, responsive UI built with Gradio
 
----
+## Quick Start with Pinokio
 
-## 🚀 Pinokio (One-Click Install)
+This application is packaged for [Pinokio](https://pinokio.com/) for one-click installation and management.
 
-This app is packaged for [Pinokio](https://pinokio.com/) for one-click installation:
+**Available Commands:**
+- **Install** - Sets up Python environment, installs dependencies, and configures PyTorch for your GPU
+- **Start** - Launches the Gradio UI at `http://localhost:7860`
+- **Update** - Pulls latest changes from repository
+- **Reset** - Removes environment for clean reinstall
 
-1. **Install** - Creates Python venv, installs dependencies, configures PyTorch for your GPU (NVIDIA/AMD/Apple Silicon)
-2. **Start** - Launches the Gradio UI at http://localhost:7860
-3. **Update** - Pulls latest changes via `git pull`
-4. **Reset** - Removes the environment (re-run Install to start fresh)
-5. **Save Disk Space** - Deduplicates shared library files across Pinokio apps
+## System Requirements
 
----
+**Minimum:**
+- Python 3.10 or higher (3.12 recommended)
+- 16GB RAM
+- 50GB free disk space
+- Internet connection for model downloads
 
-## 📋 Prerequisites
+**Recommended:**
+- 32GB RAM
+- NVIDIA GPU with 10GB+ VRAM (24GB+ for optimal performance)
+- CUDA 12.8 compatible drivers
 
-### System Requirements
+**Note:** CPU-only mode is supported but significantly slower.
 
-- **Python**: 3.10 or higher (3.12 recommended)
-- **RAM**: Minimum 16GB (32GB recommended)
-- **Disk Space**: ~50GB free space (for all models and dependencies)
-- **GPU** (optional but recommended):
-  - NVIDIA GPU with CUDA support
-  - CUDA 12.8 compatible drivers
-  - Minimum 10GB VRAM (24GB+ recommended)
+## Usage Guide
 
-### Software Requirements
+### Voice Cloning (TTS)
 
-- **[Pinokio](https://pinokio.com/)** - One-click app manager
-- **CUDA drivers** (optional, for NVIDIA GPU acceleration)
+Generate speech with optional voice cloning from reference audio.
 
----
+1. Enter your text
+2. Optionally upload reference audio (3-30 seconds recommended)
+3. Adjust generation settings if needed
+4. Click "Generate Speech"
 
-## 🎮 Usage
+**Without reference audio:** Uses default voice  
+**With reference audio:** Clones the voice characteristics
 
-Click **Start** in Pinokio, then open your browser to **http://localhost:7860**
+### Dialogue Generation (TTSD)
 
----
+Create multi-speaker conversations with distinct voices.
 
-## 📖 How to Use Each Tab
-
-### 🎙️ TTS - Voice Cloning
-
-1. Enter text to synthesize
-2. (Optional) Upload reference audio to clone a voice
-3. Click "Generate Speech"
-
-**Tips:** Without reference = default voice. With reference = voice cloning. Works with any language.
-
-### 💬 TTSD - Dialogue Generation
-
-1. Enter dialogue script with speaker labels:
-   ```
-   Speaker1: Hello there!
-   Speaker2: Hi! How are you?
-   ```
-2. Set number of speakers (1-5)
+1. Write your dialogue with speaker labels:
+```
+Speaker1: Hello there!
+Speaker2: Hi! How are you?
+Speaker1: Great weather today.
+```
+2. Set the number of speakers (1-5)
 3. Click "Generate Dialogue"
 
-### 🎨 Voice Generator
+### Voice Design (VoiceGenerator)
 
-1. Describe the voice (e.g., "A young female with a cheerful tone")
+Create custom voices from text descriptions without reference audio.
+
+1. Describe the desired voice characteristics:
+   - Age and gender
+   - Tone and emotion
+   - Accent or style
 2. Enter text to synthesize
 3. Click "Generate Voice"
 
-**Tips:** Be descriptive about age, gender, tone. No reference audio needed.
+**Example descriptions:**
+- "A young female with a cheerful, energetic tone"
+- "An elderly male with a calm, wise voice"
+- "A middle-aged professional with a confident tone"
 
-### 🔊 Sound Effects
+### Sound Effects
 
-1. Describe the sound (e.g., "Thunder and rain in a storm")
+Generate environmental sounds and audio effects from descriptions.
+
+1. Describe the sound you want:
+   - "Thunder and rain in a storm"
+   - "Busy city street with traffic"
+   - "Crackling fireplace"
 2. Click "Generate Sound"
 
----
+## Generation Settings
 
-## ⚙️ Settings
+- **Temperature** (0.1-3.0): Controls randomness. Lower = more stable, higher = more creative
+- **Top P** (0.1-1.0): Nucleus sampling threshold for token selection
+- **Top K** (1-200): Limits vocabulary selection to top K tokens
+- **Max New Tokens**: Controls maximum output length
 
-- **Temperature** (0.1-3.0): Higher = more creative, lower = more stable
-- **Top P** (0.1-1.0): Nucleus sampling threshold
-- **Top K** (1-200): Limits token selection
-- **Max New Tokens**: Maximum audio length
+## Memory Usage
 
----
-
-## 🔧 Troubleshooting
-
-### CUDA Out of Memory
-
-- Close other GPU apps
-- Reduce `max_new_tokens` in the UI
-
-### Install / Import Errors
-
-Run **Reset** in Pinokio, then **Install** again.
-
-### Models Not Loading
-
-- Check internet connection
-- Ensure ~50GB disk space
-
----
-
-## 📊 Memory Requirements
-
-| Model | GPU VRAM |
-|-------|----------|
+| Model | VRAM Required |
+|-------|---------------|
 | MOSS-TTS | ~10GB |
 | MOSS-TTSD | ~10GB |
 | MOSS-VoiceGenerator | ~8GB |
 | MOSS-SoundEffect | ~10GB |
 
-Models load on-demand; only the active model uses memory.
+Models load on-demand. Only the active tab's model occupies memory.
 
----
+## Troubleshooting
 
-## 🎯 Best Practices
+**Out of Memory Errors**
+- Close other GPU applications
+- Reduce `max_new_tokens` setting
+- Use CPU mode if GPU memory is insufficient
 
-1. **Start small** - Test with short text first
-2. **Good reference audio** - Clear, high-quality for voice cloning
-3. **Be descriptive** - Detailed descriptions for voice/sound generation
-4. **Experiment** - Try different settings
+**Installation Issues**
+- Run **Reset** in Pinokio
+- Run **Install** again
+- Check Python version compatibility
 
----
+**Model Download Failures**
+- Verify internet connection
+- Ensure sufficient disk space (~50GB)
+- Check firewall settings
 
-## 🆘 Getting Help
+**Poor Audio Quality**
+- Use high-quality reference audio (clear, minimal background noise)
+- Adjust temperature setting (try 0.7-1.0 range)
+- Ensure reference audio is 3-30 seconds long
 
-- **GitHub Issues**: [MOSS-TTS Issues](https://github.com/OpenMOSS/MOSS-TTS/issues)
-- **Documentation**: [MOSS-TTS Docs](https://github.com/OpenMOSS/MOSS-TTS)
-- **Discord**: [OpenMOSS Discord](https://discord.gg/fvm5TaWjU3)
+## Best Practices
 
----
+1. **Test incrementally** - Start with short text to verify settings
+2. **Quality reference audio** - Use clear recordings with minimal background noise
+3. **Descriptive prompts** - Provide detailed descriptions for voice/sound generation
+4. **Adjust settings** - Experiment with temperature and sampling parameters
+5. **Monitor memory** - Close unused applications when running large models
 
-## 📄 License
+## Resources
 
-Apache 2.0 (same as MOSS-TTS)
+- **Source Code**: [OpenMOSS/MOSS-TTS](https://github.com/OpenMOSS/MOSS-TTS)
+- **Issues**: [GitHub Issues](https://github.com/OpenMOSS/MOSS-TTS/issues)
+- **Community**: [OpenMOSS Discord](https://discord.gg/fvm5TaWjU3)
 
-## 🙏 Credits
+## License
 
-- **OpenMOSS Team** - MOSS-TTS models
-- **MOSI.AI** - Model development
+Apache 2.0 License (same as MOSS-TTS)
+
+## Acknowledgments
+
+- **OpenMOSS Team** - MOSS-TTS model development
+- **MOSI.AI** - Research and model training
 - **Gradio** - Web interface framework
