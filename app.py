@@ -16,16 +16,35 @@ import argparse
 import functools
 import importlib.util
 import json
+import os
 import re
 import time
 from pathlib import Path
 from typing import Optional, Tuple, Any
 
+# Fix for Windows: Ensure HuggingFace uses forward slashes for repo IDs
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+# Prevent Windows path separator issues
+if os.name == 'nt':  # Windows
+    os.environ.setdefault("HF_HUB_OFFLINE", "0")
+
 import gradio as gr
 import numpy as np
 import torch
 import torchaudio
+
+# Import and patch transformers to handle Windows paths
 from transformers import AutoModel, AutoProcessor
+from transformers.utils import hub
+original_cached_file = hub.cached_file
+
+def patched_cached_file(path_or_repo_id, *args, **kwargs):
+    """Ensure repo IDs use forward slashes on Windows."""
+    if isinstance(path_or_repo_id, str) and not os.path.exists(path_or_repo_id):
+        path_or_repo_id = path_or_repo_id.replace("\\", "/")
+    return original_cached_file(path_or_repo_id, *args, **kwargs)
+
+hub.cached_file = patched_cached_file
 
 # Disable the broken cuDNN SDPA backend
 torch.backends.cuda.enable_cudnn_sdp(False)
