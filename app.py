@@ -25,63 +25,12 @@ from typing import Optional, Tuple, Any
 
 # Fix for Windows: Ensure HuggingFace uses forward slashes for repo IDs
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-# Prevent Windows path separator issues
-if os.name == 'nt':  # Windows
-    os.environ.setdefault("HF_HUB_OFFLINE", "0")
 
 import gradio as gr
 import numpy as np
 import torch
 import torchaudio
-
-# Import and patch transformers to handle Windows paths
 from transformers import AutoModel, AutoProcessor
-from transformers.utils import hub
-
-# Comprehensive Windows path fix - patch at multiple levels
-try:
-    from huggingface_hub import file_download
-    from huggingface_hub.utils import _validators
-    
-    # Patch validate_repo_id
-    original_validate_repo_id = _validators.validate_repo_id
-    def patched_validate_repo_id(repo_id, *args, **kwargs):
-        if isinstance(repo_id, str):
-            repo_id = repo_id.replace("\\", "/")
-        return original_validate_repo_id(repo_id, *args, **kwargs)
-    _validators.validate_repo_id = patched_validate_repo_id
-    
-    # Patch hf_hub_download - this is critical!
-    original_hf_hub_download = file_download.hf_hub_download
-    def patched_hf_hub_download(repo_id, *args, **kwargs):
-        if isinstance(repo_id, str):
-            repo_id = repo_id.replace("\\", "/")
-        return original_hf_hub_download(repo_id, *args, **kwargs)
-    file_download.hf_hub_download = patched_hf_hub_download
-    
-    # Also patch in huggingface_hub namespace
-    import huggingface_hub
-    huggingface_hub.hf_hub_download = patched_hf_hub_download
-    
-    print("[INFO] Successfully patched HuggingFace Hub functions for Windows compatibility")
-except (ImportError, AttributeError) as e:
-    print(f"[WARNING] Could not patch HuggingFace Hub: {e}")
-
-# Patch transformers cached_file functions
-original_cached_file = hub.cached_file
-def patched_cached_file(path_or_repo_id, *args, **kwargs):
-    if isinstance(path_or_repo_id, str) and not os.path.exists(path_or_repo_id):
-        path_or_repo_id = path_or_repo_id.replace("\\", "/")
-    return original_cached_file(path_or_repo_id, *args, **kwargs)
-hub.cached_file = patched_cached_file
-
-if hasattr(hub, 'cached_files'):
-    original_cached_files = hub.cached_files
-    def patched_cached_files(path_or_repo_id, *args, **kwargs):
-        if isinstance(path_or_repo_id, str) and not os.path.exists(path_or_repo_id):
-            path_or_repo_id = path_or_repo_id.replace("\\", "/")
-        return original_cached_files(path_or_repo_id, *args, **kwargs)
-    hub.cached_files = patched_cached_files
 
 # Disable the broken cuDNN SDPA backend
 torch.backends.cuda.enable_cudnn_sdp(False)
@@ -89,16 +38,20 @@ torch.backends.cuda.enable_flash_sdp(True)
 torch.backends.cuda.enable_mem_efficient_sdp(True)
 torch.backends.cuda.enable_math_sdp(True)
 
-# Model paths
+# Model paths - explicitly use forward slashes for HuggingFace repo IDs
+def _normalize_repo_id(repo_id: str) -> str:
+    """Ensure repo IDs always use forward slashes (Windows compatibility)."""
+    return repo_id.replace("\\", "/")
+
 MODELS = {
-    "tts": "OpenMOSS-Team/MOSS-TTS",
-    "ttsd": "OpenMOSS-Team/MOSS-TTSD-v1.0",
-    "voice_gen": "OpenMOSS-Team/MOSS-VoiceGenerator",
-    "sound_effect": "OpenMOSS-Team/MOSS-SoundEffect",
-    "realtime": "OpenMOSS-Team/MOSS-TTS-Realtime",
+    "tts": _normalize_repo_id("OpenMOSS-Team/MOSS-TTS"),
+    "ttsd": _normalize_repo_id("OpenMOSS-Team/MOSS-TTSD-v1.0"),
+    "voice_gen": _normalize_repo_id("OpenMOSS-Team/MOSS-VoiceGenerator"),
+    "sound_effect": _normalize_repo_id("OpenMOSS-Team/MOSS-SoundEffect"),
+    "realtime": _normalize_repo_id("OpenMOSS-Team/MOSS-TTS-Realtime"),
 }
 
-CODEC_MODEL_PATH = "OpenMOSS-Team/MOSS-Audio-Tokenizer"
+CODEC_MODEL_PATH = _normalize_repo_id("OpenMOSS-Team/MOSS-Audio-Tokenizer")
 
 # Global cache for loaded models
 _model_cache = {}
@@ -138,8 +91,8 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
     device = torch.device(device_str if torch.cuda.is_available() else "cpu")
     dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
 
-    # Ensure forward slashes for HuggingFace repo IDs (Windows compatibility)
-    model_path = MODELS[model_key].replace("\\", "/")
+    # Get model path (already normalized)
+    model_path = MODELS[model_key]
     print(f"Loading {model_key} from {model_path}...")
 
     resolved_attn = resolve_attn_implementation(attn_implementation, device, dtype)
@@ -147,8 +100,7 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
     # Load processor
     processor_kwargs = {"trust_remote_code": True}
     if model_key == "ttsd":
-        # Ensure forward slashes for codec path too
-        processor_kwargs["codec_path"] = CODEC_MODEL_PATH.replace("\\", "/")
+        processor_kwargs["codec_path"] = CODEC_MODEL_PATH
 
     processor = AutoProcessor.from_pretrained(model_path, **processor_kwargs)
 
