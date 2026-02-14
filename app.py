@@ -622,10 +622,17 @@ def main():
     parser = argparse.ArgumentParser(description="MOSS-TTS Unified Interface")
     parser.add_argument("--device", type=str, default="cuda:0", help="Device to use (e.g., cuda:0, cpu)")
     parser.add_argument("--attn_implementation", type=str, default="auto", help="Attention implementation")
-    parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind to")
-    parser.add_argument("--port", type=int, default=7860, help="Port to bind to")
+    parser.add_argument("--host", type=str, default=None, help="Host to bind to")
+    parser.add_argument("--port", type=int, default=None, help="Port to bind to")
     parser.add_argument("--share", action="store_true", help="Create a public share link")
     args = parser.parse_args()
+    
+    # Use environment variables if set (Pinokio), otherwise use defaults
+    # On Windows, use 127.0.0.1 instead of 0.0.0.0 for better compatibility
+    if args.host is None:
+        args.host = os.environ.get("GRADIO_SERVER_NAME", "127.0.0.1" if os.name == 'nt' else "0.0.0.0")
+    if args.port is None:
+        args.port = int(os.environ.get("GRADIO_SERVER_PORT", "7860"))
 
     # Resolve attention implementation
     runtime_device = torch.device(args.device if torch.cuda.is_available() else "cpu")
