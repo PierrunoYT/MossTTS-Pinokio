@@ -38,43 +38,49 @@ import torchaudio
 from transformers import AutoModel, AutoProcessor
 from transformers.utils import hub
 
-# Patch the validation function at the correct location
+# Comprehensive Windows path fix - patch at multiple levels
 try:
+    from huggingface_hub import file_download
     from huggingface_hub.utils import _validators
-    original_validate_repo_id = _validators.validate_repo_id
     
+    # Patch validate_repo_id
+    original_validate_repo_id = _validators.validate_repo_id
     def patched_validate_repo_id(repo_id, *args, **kwargs):
-        """Ensure repo IDs use forward slashes before validation."""
         if isinstance(repo_id, str):
             repo_id = repo_id.replace("\\", "/")
         return original_validate_repo_id(repo_id, *args, **kwargs)
-    
     _validators.validate_repo_id = patched_validate_repo_id
-    print("[INFO] Successfully patched huggingface_hub.utils._validators.validate_repo_id")
+    
+    # Patch hf_hub_download - this is critical!
+    original_hf_hub_download = file_download.hf_hub_download
+    def patched_hf_hub_download(repo_id, *args, **kwargs):
+        if isinstance(repo_id, str):
+            repo_id = repo_id.replace("\\", "/")
+        return original_hf_hub_download(repo_id, *args, **kwargs)
+    file_download.hf_hub_download = patched_hf_hub_download
+    
+    # Also patch in huggingface_hub namespace
+    import huggingface_hub
+    huggingface_hub.hf_hub_download = patched_hf_hub_download
+    
+    print("[INFO] Successfully patched HuggingFace Hub functions for Windows compatibility")
 except (ImportError, AttributeError) as e:
-    print(f"[WARNING] Could not patch validate_repo_id: {e}")
+    print(f"[WARNING] Could not patch HuggingFace Hub: {e}")
 
-# Patch cached_file functions
+# Patch transformers cached_file functions
 original_cached_file = hub.cached_file
-
 def patched_cached_file(path_or_repo_id, *args, **kwargs):
-    """Ensure repo IDs use forward slashes on Windows."""
     if isinstance(path_or_repo_id, str) and not os.path.exists(path_or_repo_id):
         path_or_repo_id = path_or_repo_id.replace("\\", "/")
     return original_cached_file(path_or_repo_id, *args, **kwargs)
-
 hub.cached_file = patched_cached_file
 
-# Patch cached_files (plural) as well
 if hasattr(hub, 'cached_files'):
     original_cached_files = hub.cached_files
-    
     def patched_cached_files(path_or_repo_id, *args, **kwargs):
-        """Ensure repo IDs use forward slashes on Windows."""
         if isinstance(path_or_repo_id, str) and not os.path.exists(path_or_repo_id):
             path_or_repo_id = path_or_repo_id.replace("\\", "/")
         return original_cached_files(path_or_repo_id, *args, **kwargs)
-    
     hub.cached_files = patched_cached_files
 
 # Disable the broken cuDNN SDPA backend
@@ -546,6 +552,60 @@ def build_sound_effect_tab(args):
 # TAB 5: Info & About
 # ============================================================================
 
+def build_settings_tab():
+    """Build the settings tab."""
+    with gr.Column():
+        gr.Markdown("## ⚙️ Settings")
+        gr.Markdown("Configure HuggingFace authentication for model downloads.")
+        
+        with gr.Row():
+            hf_token_input = gr.Textbox(
+                label="HuggingFace Token (Optional)",
+                placeholder="hf_...",
+                type="password",
+                info="Enter your HuggingFace token for private repos or faster downloads"
+            )
+        
+        with gr.Row():
+            save_token_btn = gr.Button("💾 Save Token", variant="primary")
+            clear_token_btn = gr.Button("🗑️ Clear Token")
+            status_output = gr.Textbox(label="Status", interactive=False)
+        
+        def save_hf_token(token):
+            if token and token.strip():
+                os.environ["HF_TOKEN"] = token.strip()
+                os.environ["HUGGING_FACE_HUB_TOKEN"] = token.strip()
+                return "✅ Token saved successfully! It will be used for model downloads."
+            return "❌ Please enter a valid token"
+        
+        def clear_hf_token():
+            os.environ.pop("HF_TOKEN", None)
+            os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
+            return "✅ Token cleared"
+        
+        save_token_btn.click(
+            fn=save_hf_token,
+            inputs=[hf_token_input],
+            outputs=[status_output]
+        )
+        
+        clear_token_btn.click(
+            fn=clear_hf_token,
+            outputs=[status_output]
+        )
+        
+        gr.Markdown("""
+        ### How to get a HuggingFace Token:
+        
+        1. Go to [HuggingFace Settings](https://huggingface.co/settings/tokens)
+        2. Click "New token"
+        3. Give it a name and select "Read" permission
+        4. Copy the token and paste it above
+        
+        **Note:** Tokens are stored in memory only and will be cleared when you restart the app.
+        """)
+
+
 def build_info_tab():
     """Build the info/about tab."""
     with gr.Column():
@@ -646,6 +706,9 @@ def build_unified_interface(args):
 
             with gr.Tab("🔊 Sound Effects"):
                 build_sound_effect_tab(args)
+
+            with gr.Tab("⚙️ Settings"):
+                build_settings_tab()
 
             with gr.Tab("ℹ️ About"):
                 build_info_tab()
