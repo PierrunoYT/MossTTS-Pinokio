@@ -15,6 +15,7 @@ import argparse
 import functools
 import importlib.util
 import os
+import sys
 import traceback
 from typing import Optional, Tuple
 
@@ -75,6 +76,21 @@ def resolve_attn_implementation(requested: str, device: torch.device, dtype: tor
     return "eager"
 
 
+def _resolve_hf_path(repo_id: str) -> str:
+    """Resolve a HuggingFace repo ID to a local snapshot path on Windows.
+
+    The model's custom processor code converts the path with ``Path()``,
+    which on Windows turns the ``/`` in repo IDs (e.g. ``Org/Model``) into
+    backslashes, producing an invalid HuggingFace repo ID.  Pre-downloading
+    with ``snapshot_download`` gives us a real local directory path where
+    backslashes are expected.
+    """
+    if sys.platform == "win32" and "/" in repo_id and not os.path.isdir(repo_id):
+        from huggingface_hub import snapshot_download
+        return snapshot_download(repo_id)
+    return repo_id
+
+
 @functools.lru_cache(maxsize=5)
 def load_model(model_key: str, device_str: str, attn_implementation: str):
     """Load and cache a model."""
@@ -84,14 +100,18 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
     model_path = MODELS[model_key]
     print(f"Loading {model_key} from {model_path}...")
     
+    # On Windows, resolve HF repo IDs to local paths to avoid backslash issues
+    # in model custom code that uses Path() on the repo ID string.
+    local_model_path = _resolve_hf_path(model_path)
+    
     resolved_attn = resolve_attn_implementation(attn_implementation, device, dtype)
     
     # Load processor
     processor_kwargs = {"trust_remote_code": True}
     if model_key == "ttsd":
-        processor_kwargs["codec_path"] = CODEC_MODEL_PATH
+        processor_kwargs["codec_path"] = _resolve_hf_path(CODEC_MODEL_PATH)
     
-    processor = AutoProcessor.from_pretrained(model_path, **processor_kwargs)
+    processor = AutoProcessor.from_pretrained(local_model_path, **processor_kwargs)
     
     if hasattr(processor, "audio_tokenizer"):
         processor.audio_tokenizer = processor.audio_tokenizer.to(device)
@@ -105,7 +125,7 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
     if resolved_attn:
         model_kwargs["attn_implementation"] = resolved_attn
     
-    model = AutoModel.from_pretrained(model_path, **model_kwargs).to(device)
+    model = AutoModel.from_pretrained(local_model_path, **model_kwargs).to(device)
     model.eval()
     
     sample_rate = int(getattr(processor.model_config, "sampling_rate", 24000))
