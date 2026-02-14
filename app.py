@@ -38,9 +38,24 @@ import torchaudio
 from transformers import AutoModel, AutoProcessor
 from transformers.utils import hub
 
-# Patch multiple functions to ensure forward slashes
+# Patch the validation function at the correct location
+try:
+    from huggingface_hub.utils import _validators
+    original_validate_repo_id = _validators.validate_repo_id
+    
+    def patched_validate_repo_id(repo_id, *args, **kwargs):
+        """Ensure repo IDs use forward slashes before validation."""
+        if isinstance(repo_id, str):
+            repo_id = repo_id.replace("\\", "/")
+        return original_validate_repo_id(repo_id, *args, **kwargs)
+    
+    _validators.validate_repo_id = patched_validate_repo_id
+    print("[INFO] Successfully patched huggingface_hub.utils._validators.validate_repo_id")
+except (ImportError, AttributeError) as e:
+    print(f"[WARNING] Could not patch validate_repo_id: {e}")
+
+# Patch cached_file functions
 original_cached_file = hub.cached_file
-original_get_cached_files = getattr(hub, 'get_cached_files', None)
 
 def patched_cached_file(path_or_repo_id, *args, **kwargs):
     """Ensure repo IDs use forward slashes on Windows."""
@@ -50,29 +65,17 @@ def patched_cached_file(path_or_repo_id, *args, **kwargs):
 
 hub.cached_file = patched_cached_file
 
-if original_get_cached_files:
-    def patched_get_cached_files(path_or_repo_id, *args, **kwargs):
+# Patch cached_files (plural) as well
+if hasattr(hub, 'cached_files'):
+    original_cached_files = hub.cached_files
+    
+    def patched_cached_files(path_or_repo_id, *args, **kwargs):
         """Ensure repo IDs use forward slashes on Windows."""
         if isinstance(path_or_repo_id, str) and not os.path.exists(path_or_repo_id):
             path_or_repo_id = path_or_repo_id.replace("\\", "/")
-        return original_get_cached_files(path_or_repo_id, *args, **kwargs)
+        return original_cached_files(path_or_repo_id, *args, **kwargs)
     
-    hub.get_cached_files = patched_get_cached_files
-
-# Also patch the validation function directly
-try:
-    from huggingface_hub import utils as hf_utils
-    original_validate_repo_id = hf_utils.validate_repo_id
-    
-    def patched_validate_repo_id(repo_id, *args, **kwargs):
-        """Ensure repo IDs use forward slashes before validation."""
-        if isinstance(repo_id, str):
-            repo_id = repo_id.replace("\\", "/")
-        return original_validate_repo_id(repo_id, *args, **kwargs)
-    
-    hf_utils.validate_repo_id = patched_validate_repo_id
-except (ImportError, AttributeError):
-    pass  # If function doesn't exist, skip patching
+    hub.cached_files = patched_cached_files
 
 # Disable the broken cuDNN SDPA backend
 torch.backends.cuda.enable_cudnn_sdp(False)
