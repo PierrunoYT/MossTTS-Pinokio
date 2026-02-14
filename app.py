@@ -172,9 +172,12 @@ def run_tts_inference(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
+                text_temperature=temperature,
+                text_top_p=top_p,
+                text_top_k=top_k,
+                audio_temperature=temperature,
+                audio_top_p=top_p,
+                audio_top_k=top_k,
             )
         
         # Decode
@@ -264,9 +267,12 @@ def run_ttsd_inference(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
+                text_temperature=temperature,
+                text_top_p=top_p,
+                text_top_k=top_k,
+                audio_temperature=temperature,
+                audio_top_p=top_p,
+                audio_top_k=top_k,
             )
         
         # Decode
@@ -361,9 +367,12 @@ def run_voice_gen_inference(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
+                text_temperature=temperature,
+                text_top_p=top_p,
+                text_top_k=top_k,
+                audio_temperature=temperature,
+                audio_top_p=top_p,
+                audio_top_k=top_k,
             )
         
         # Decode
@@ -456,9 +465,12 @@ def run_sound_effect_inference(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
+                text_temperature=temperature,
+                text_top_p=top_p,
+                text_top_k=top_k,
+                audio_temperature=temperature,
+                audio_top_p=top_p,
+                audio_top_k=top_k,
             )
         
         # Decode
