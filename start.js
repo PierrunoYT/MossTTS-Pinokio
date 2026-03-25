@@ -16,6 +16,7 @@ module.exports = {
           GRADIO_SERVER_NAME: "127.0.0.1",
           GRADIO_SERVER_PORT: "7860",
           HF_HUB_ENABLE_HF_TRANSFER: "1",
+          HF_HUB_DOWNLOAD_TIMEOUT: "300",
           PYTHONUTF8: "1",
           TORCHDYNAMO_SUPPRESS_ERRORS: "1"
         },

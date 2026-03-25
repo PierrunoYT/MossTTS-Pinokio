@@ -90,10 +90,28 @@ def _resolve_hf_path(repo_id: str) -> str:
     backslashes, producing an invalid HuggingFace repo ID.  Pre-downloading
     with ``snapshot_download`` gives us a real local directory path where
     backslashes are expected.
+
+    Retries up to 5 times on network errors (common on Windows for large
+    multi-GB downloads). Each interrupted attempt resumes from where it
+    left off thanks to HuggingFace Hub's local cache.
     """
     if sys.platform == "win32" and "/" in repo_id and not os.path.isdir(repo_id):
+        import time
         from huggingface_hub import snapshot_download
-        return snapshot_download(repo_id)
+
+        max_attempts = 5
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return snapshot_download(repo_id)
+            except Exception as exc:
+                if attempt == max_attempts:
+                    raise
+                wait = attempt * 5
+                print(
+                    f"⚠️  Download interrupted ({exc.__class__.__name__}: {exc}). "
+                    f"Retrying in {wait}s... (attempt {attempt}/{max_attempts})"
+                )
+                time.sleep(wait)
     return repo_id
 
 
