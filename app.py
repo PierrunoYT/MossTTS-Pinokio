@@ -6,6 +6,7 @@ All-in-one Gradio UI combining:
 - MOSS-TTSD (Dialogue generation)
 - MOSS-VoiceGenerator (Voice design from text prompts)
 - MOSS-SoundEffect (Sound effect generation)
+- MOSS-TTS-Realtime (Low-latency streaming TTS for voice agents)
 
 Usage:
     python app.py [--device cuda:0] [--port 7860] [--share]
@@ -37,9 +38,11 @@ torch.backends.cuda.enable_math_sdp(True)
 # Model paths
 MODELS = {
     "tts": "OpenMOSS-Team/MOSS-TTS",
+    "tts_local": "OpenMOSS-Team/MOSS-TTS-Local-Transformer",
     "ttsd": "OpenMOSS-Team/MOSS-TTSD-v1.0",
     "voice_gen": "OpenMOSS-Team/MOSS-VoiceGenerator",
     "sound_effect": "OpenMOSS-Team/MOSS-SoundEffect",
+    "realtime": "OpenMOSS-Team/MOSS-TTS-Realtime",
 }
 
 CODEC_MODEL_PATH = "OpenMOSS-Team/MOSS-Audio-Tokenizer"
@@ -94,7 +97,7 @@ def _resolve_hf_path(repo_id: str) -> str:
     return repo_id
 
 
-@functools.lru_cache(maxsize=5)
+@functools.lru_cache(maxsize=6)
 def load_model(model_key: str, device_str: str, attn_implementation: str):
     """Load and cache a model."""
     device = torch.device(device_str if torch.cuda.is_available() else "cpu")
@@ -145,6 +148,7 @@ def run_tts_inference(
     text: str,
     reference_audio: Optional[str],
     duration_seconds: float,
+    model_variant: str,
     temperature: float,
     top_p: float,
     top_k: int,
@@ -158,7 +162,8 @@ def run_tts_inference(
         if not text or not text.strip():
             return None, "❌ Error: Please enter text to synthesize"
 
-        model, processor, dev, sample_rate = load_model("tts", device, attn_implementation)
+        model_key = "tts_local" if model_variant == "MOSS-TTS-Local (1.7B)" else "tts"
+        model, processor, dev, sample_rate = load_model(model_key, device, attn_implementation)
 
         # Build message kwargs
         msg_kwargs = {"text": text}
@@ -210,7 +215,14 @@ def build_tts_tab(args):
     with gr.Column():
         gr.Markdown("### 🎙️ MOSS-TTS - High-Quality Voice Cloning")
         gr.Markdown("Generate speech with or without reference audio for voice cloning.")
-        
+
+        tts_model_variant = gr.Radio(
+            choices=["MOSS-TTS (8B)", "MOSS-TTS-Local (1.7B)"],
+            value="MOSS-TTS (8B)",
+            label="Model Variant",
+            info="8B: best zero-shot cloning & long-form stability. 1.7B Local: highest speaker similarity score, lighter VRAM.",
+        )
+
         with gr.Row():
             with gr.Column(scale=1):
                 tts_text = gr.Textbox(
@@ -222,7 +234,7 @@ def build_tts_tab(args):
                     label="Reference Audio (Optional - for voice cloning)",
                     type="filepath",
                 )
-                
+
                 tts_duration = gr.Slider(
                     0, 60, value=0, step=1,
                     label="Duration (seconds, 0 = auto)",
@@ -244,7 +256,7 @@ def build_tts_tab(args):
 
         tts_generate_btn.click(
             fn=lambda *x: run_tts_inference(*x, args.device, args.attn_implementation),
-            inputs=[tts_text, tts_reference, tts_duration, tts_temp, tts_top_p, tts_top_k, tts_rep_penalty, tts_max_tokens],
+            inputs=[tts_text, tts_reference, tts_duration, tts_model_variant, tts_temp, tts_top_p, tts_top_k, tts_rep_penalty, tts_max_tokens],
             outputs=[tts_output, tts_status],
         )
 
@@ -560,7 +572,111 @@ def build_sound_effect_tab(args):
 
 
 # ============================================================================
-# TAB 5: Info & About
+# TAB 5: MOSS-TTS-Realtime (Low-Latency Streaming TTS)
+# ============================================================================
+
+def run_realtime_inference(
+    text: str,
+    reference_audio: Optional[str],
+    temperature: float,
+    top_p: float,
+    top_k: int,
+    max_new_tokens: int,
+    device: str,
+    attn_implementation: str,
+) -> Tuple[Optional[Tuple[int, np.ndarray]], str]:
+    """Run MOSS-TTS-Realtime inference."""
+    try:
+        if not text or not text.strip():
+            return None, "❌ Error: Please enter text to synthesize"
+
+        model, processor, dev, sample_rate = load_model("realtime", device, attn_implementation)
+
+        msg_kwargs = {"text": text}
+        if reference_audio:
+            msg_kwargs["reference"] = [reference_audio]
+
+        conversation = [processor.build_user_message(**msg_kwargs)]
+
+        batch = processor(conversation, mode="generation")
+        input_ids = batch["input_ids"].to(dev)
+        attention_mask = batch["attention_mask"].to(dev)
+
+        with torch.no_grad():
+            outputs = model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                max_new_tokens=max_new_tokens,
+                audio_temperature=temperature,
+                audio_top_p=top_p,
+                audio_top_k=top_k,
+            )
+
+        messages = processor.decode(outputs)
+        if messages and len(messages) > 0:
+            audio = messages[0].audio_codes_list[0]
+            audio_np = audio.cpu().numpy()
+            return (sample_rate, audio_np), "✅ Realtime generation completed!"
+
+        return None, "❌ Error: No audio generated"
+
+    except Exception as e:
+        error_msg = f"❌ Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+        print(error_msg)
+        return None, error_msg
+
+
+def build_realtime_tab(args):
+    """Build the MOSS-TTS-Realtime tab."""
+    with gr.Column():
+        gr.Markdown("### ⚡ MOSS-TTS-Realtime - Low-Latency Voice Agent TTS")
+        gr.Markdown(
+            "1.7B streaming model optimised for real-time voice agents. "
+            "Achieves ~180 ms TTFB after warm-up. "
+            "Optionally supply a reference audio to anchor the speaker voice."
+        )
+
+        with gr.Row():
+            with gr.Column(scale=1):
+                rt_text = gr.Textbox(
+                    label="Text to Synthesize",
+                    lines=6,
+                    placeholder="Enter text here...",
+                )
+                rt_reference = gr.Audio(
+                    label="Reference Audio (Optional)",
+                    type="filepath",
+                )
+
+                with gr.Accordion("Advanced Settings", open=False):
+                    rt_temp = gr.Slider(0.1, 3.0, value=1.0, step=0.05, label="Temperature")
+                    rt_top_p = gr.Slider(0.1, 1.0, value=0.9, step=0.01, label="Top P")
+                    rt_top_k = gr.Slider(1, 200, value=50, step=1, label="Top K")
+                    rt_max_tokens = gr.Slider(256, 4096, value=2048, step=128, label="Max New Tokens")
+
+                rt_generate_btn = gr.Button("⚡ Generate (Realtime)", variant="primary", size="lg")
+
+            with gr.Column(scale=1):
+                rt_output = gr.Audio(label="Generated Audio")
+                rt_status = gr.Textbox(label="Status", lines=3, interactive=False)
+
+                gr.Markdown("**About this model:**")
+                gr.Markdown(
+                    "- Architecture: MossTTSRealtime (1.7B)\n"
+                    "- TTFB: ~180 ms (after warm-up)\n"
+                    "- Ideal for voice agents paired with LLMs\n"
+                    "- Supports multi-turn context via reference audio"
+                )
+
+        rt_generate_btn.click(
+            fn=lambda *x: run_realtime_inference(*x, args.device, args.attn_implementation),
+            inputs=[rt_text, rt_reference, rt_temp, rt_top_p, rt_top_k, rt_max_tokens],
+            outputs=[rt_output, rt_status],
+        )
+
+
+# ============================================================================
+# TAB 6: Info & About
 # ============================================================================
 
 def build_info_tab():
@@ -575,6 +691,7 @@ def build_info_tab():
         
         ### 🎙️ MOSS-TTS
         High-fidelity text-to-speech with zero-shot voice cloning. Upload a reference audio to clone any voice!
+        Choose between **MOSS-TTS (8B)** for best long-form stability and **MOSS-TTS-Local (1.7B)** for the highest speaker similarity score with lower VRAM usage.
         
         ### 💬 MOSS-TTSD
         Multi-speaker dialogue generation for creating realistic conversations with different voices.
@@ -584,6 +701,9 @@ def build_info_tab():
         
         ### 🔊 MOSS-SoundEffect
         Generate environmental sounds and effects from text descriptions.
+        
+        ### ⚡ MOSS-TTS-Realtime
+        Low-latency streaming TTS optimised for real-time voice agents. Achieves ~180 ms TTFB after warm-up (1.7B model).
         
         ## 🚀 Quick Start
         
@@ -654,16 +774,19 @@ def build_unified_interface(args):
         with gr.Tabs():
             with gr.Tab("🎙️ TTS - Voice Cloning"):
                 build_tts_tab(args)
-            
+
             with gr.Tab("💬 TTSD - Dialogue"):
                 build_ttsd_tab(args)
-            
+
             with gr.Tab("🎨 Voice Generator"):
                 build_voice_gen_tab(args)
-            
+
             with gr.Tab("🔊 Sound Effects"):
                 build_sound_effect_tab(args)
-            
+
+            with gr.Tab("⚡ Realtime TTS"):
+                build_realtime_tab(args)
+
             with gr.Tab("ℹ️ About"):
                 build_info_tab()
         
