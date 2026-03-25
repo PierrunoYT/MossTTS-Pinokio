@@ -44,6 +44,9 @@ MODELS = {
 
 CODEC_MODEL_PATH = "OpenMOSS-Team/MOSS-Audio-Tokenizer"
 
+# Audio tokenizer produces 12.5 tokens per second of audio
+TOKENS_PER_SECOND = 12.5
+
 # ============================================================================
 # Model Loading
 # ============================================================================
@@ -141,9 +144,11 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
 def run_tts_inference(
     text: str,
     reference_audio: Optional[str],
+    duration_seconds: float,
     temperature: float,
     top_p: float,
     top_k: int,
+    repetition_penalty: float,
     max_new_tokens: int,
     device: str,
     attn_implementation: str,
@@ -152,20 +157,24 @@ def run_tts_inference(
     try:
         if not text or not text.strip():
             return None, "❌ Error: Please enter text to synthesize"
-        
+
         model, processor, dev, sample_rate = load_model("tts", device, attn_implementation)
-        
+
+        # Build message kwargs
+        msg_kwargs = {"text": text}
+        if reference_audio:
+            msg_kwargs["reference"] = [reference_audio]
+        if duration_seconds > 0:
+            msg_kwargs["tokens"] = max(1, int(duration_seconds * TOKENS_PER_SECOND))
+
         # Build conversation
-        conversation = [processor.build_user_message(
-            text=text, 
-            reference=[reference_audio] if reference_audio else None
-        )]
-        
+        conversation = [processor.build_user_message(**msg_kwargs)]
+
         # Process inputs
         batch = processor(conversation, mode="generation")
         input_ids = batch["input_ids"].to(dev)
         attention_mask = batch["attention_mask"].to(dev)
-        
+
         # Generate
         with torch.no_grad():
             outputs = model.generate(
@@ -178,17 +187,18 @@ def run_tts_inference(
                 audio_temperature=temperature,
                 audio_top_p=top_p,
                 audio_top_k=top_k,
+                audio_repetition_penalty=repetition_penalty,
             )
-        
+
         # Decode
         messages = processor.decode(outputs)
         if messages and len(messages) > 0:
             audio = messages[0].audio_codes_list[0]
             audio_np = audio.cpu().numpy()
             return (sample_rate, audio_np), "✅ Generation completed successfully!"
-        
+
         return None, "❌ Error: No audio generated"
-        
+
     except Exception as e:
         error_msg = f"❌ Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
         print(error_msg)
@@ -213,21 +223,28 @@ def build_tts_tab(args):
                     type="filepath",
                 )
                 
+                tts_duration = gr.Slider(
+                    0, 60, value=0, step=1,
+                    label="Duration (seconds, 0 = auto)",
+                    info="Set target audio length. 0 lets the model decide.",
+                )
+
                 with gr.Accordion("Advanced Settings", open=False):
                     tts_temp = gr.Slider(0.1, 3.0, value=1.7, step=0.05, label="Temperature")
                     tts_top_p = gr.Slider(0.1, 1.0, value=0.8, step=0.01, label="Top P")
                     tts_top_k = gr.Slider(1, 200, value=25, step=1, label="Top K")
+                    tts_rep_penalty = gr.Slider(0.8, 2.0, value=1.0, step=0.05, label="Repetition Penalty")
                     tts_max_tokens = gr.Slider(256, 8192, value=4096, step=128, label="Max New Tokens")
-                
+
                 tts_generate_btn = gr.Button("🎵 Generate Speech", variant="primary", size="lg")
-            
+
             with gr.Column(scale=1):
                 tts_output = gr.Audio(label="Generated Audio")
                 tts_status = gr.Textbox(label="Status", lines=3, interactive=False)
-        
+
         tts_generate_btn.click(
             fn=lambda *x: run_tts_inference(*x, args.device, args.attn_implementation),
-            inputs=[tts_text, tts_reference, tts_temp, tts_top_p, tts_top_k, tts_max_tokens],
+            inputs=[tts_text, tts_reference, tts_duration, tts_temp, tts_top_p, tts_top_k, tts_rep_penalty, tts_max_tokens],
             outputs=[tts_output, tts_status],
         )
 
@@ -242,6 +259,7 @@ def run_ttsd_inference(
     temperature: float,
     top_p: float,
     top_k: int,
+    repetition_penalty: float,
     max_new_tokens: int,
     device: str,
     attn_implementation: str,
@@ -250,40 +268,46 @@ def run_ttsd_inference(
     try:
         if not script_text or not script_text.strip():
             return None, "❌ Error: Please enter dialogue script"
-        
+
+        # Validate speaker tags
+        import re
+        used_speakers = set(int(m) for m in re.findall(r'\[S(\d+)\]', script_text))
+        if not used_speakers:
+            return None, "❌ Error: Dialogue must include speaker tags like [S1], [S2], ..."
+        if max(used_speakers) > num_speakers:
+            return None, f"❌ Error: Script uses [S{max(used_speakers)}] but only {num_speakers} speaker(s) configured"
+
         model, processor, dev, sample_rate = load_model("ttsd", device, attn_implementation)
-        
-        # Build conversation
-        conversation = [{"role": "user", "content": script_text}]
-        
+
+        # Build conversation using the processor's message builder
+        conversation = [processor.build_user_message(text=script_text)]
+
         # Process inputs
         batch = processor(conversation, mode="generation", num_speakers=num_speakers)
         input_ids = batch["input_ids"].to(dev)
         attention_mask = batch["attention_mask"].to(dev)
-        
+
         # Generate
         with torch.no_grad():
             outputs = model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=max_new_tokens,
-                text_temperature=temperature,
-                text_top_p=top_p,
-                text_top_k=top_k,
                 audio_temperature=temperature,
                 audio_top_p=top_p,
                 audio_top_k=top_k,
+                audio_repetition_penalty=repetition_penalty,
             )
-        
+
         # Decode
         messages = processor.decode(outputs)
         if messages and len(messages) > 0:
             audio = messages[0].audio_codes_list[0]
             audio_np = audio.cpu().numpy()
             return (sample_rate, audio_np), "✅ Dialogue generation completed!"
-        
+
         return None, "❌ Error: No audio generated"
-        
+
     except Exception as e:
         error_msg = f"❌ Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
         print(error_msg)
@@ -301,7 +325,8 @@ def build_ttsd_tab(args):
                 ttsd_script = gr.Textbox(
                     label="Dialogue Script",
                     lines=10,
-                    placeholder="Speaker1: Hello!\nSpeaker2: Hi there!...",
+                    placeholder="[S1] Hello, how are you doing today?\n[S2] I'm doing great, thanks for asking!\n[S1] That's wonderful to hear.",
+                    info="Use [S1], [S2], ... tags to label each speaker's turn.",
                 )
                 ttsd_num_speakers = gr.Slider(
                     minimum=1,
@@ -310,22 +335,23 @@ def build_ttsd_tab(args):
                     step=1,
                     label="Number of Speakers",
                 )
-                
+
                 with gr.Accordion("Advanced Settings", open=False):
-                    ttsd_temp = gr.Slider(0.1, 3.0, value=1.5, step=0.05, label="Temperature")
-                    ttsd_top_p = gr.Slider(0.1, 1.0, value=0.8, step=0.01, label="Top P")
-                    ttsd_top_k = gr.Slider(1, 200, value=25, step=1, label="Top K")
+                    ttsd_temp = gr.Slider(0.1, 3.0, value=1.1, step=0.05, label="Temperature")
+                    ttsd_top_p = gr.Slider(0.1, 1.0, value=0.9, step=0.01, label="Top P")
+                    ttsd_top_k = gr.Slider(1, 200, value=50, step=1, label="Top K")
+                    ttsd_rep_penalty = gr.Slider(0.8, 2.0, value=1.1, step=0.05, label="Repetition Penalty")
                     ttsd_max_tokens = gr.Slider(256, 8192, value=2000, step=128, label="Max New Tokens")
-                
+
                 ttsd_generate_btn = gr.Button("🎭 Generate Dialogue", variant="primary", size="lg")
-            
+
             with gr.Column(scale=1):
                 ttsd_output = gr.Audio(label="Generated Dialogue")
                 ttsd_status = gr.Textbox(label="Status", lines=3, interactive=False)
-        
+
         ttsd_generate_btn.click(
             fn=lambda *x: run_ttsd_inference(*x, args.device, args.attn_implementation),
-            inputs=[ttsd_script, ttsd_num_speakers, ttsd_temp, ttsd_top_p, ttsd_top_k, ttsd_max_tokens],
+            inputs=[ttsd_script, ttsd_num_speakers, ttsd_temp, ttsd_top_p, ttsd_top_k, ttsd_rep_penalty, ttsd_max_tokens],
             outputs=[ttsd_output, ttsd_status],
         )
 
@@ -340,6 +366,7 @@ def run_voice_gen_inference(
     temperature: float,
     top_p: float,
     top_k: int,
+    repetition_penalty: float,
     max_new_tokens: int,
     device: str,
     attn_implementation: str,
@@ -350,40 +377,38 @@ def run_voice_gen_inference(
             return None, "❌ Error: Please enter voice description"
         if not text or not text.strip():
             return None, "❌ Error: Please enter text to synthesize"
-        
+
         model, processor, dev, sample_rate = load_model("voice_gen", device, attn_implementation)
-        
+
         # Build conversation
         conversation = [processor.build_user_message(instruction=instruction, text=text)]
-        
+
         # Process inputs
         batch = processor(conversation, mode="generation")
         input_ids = batch["input_ids"].to(dev)
         attention_mask = batch["attention_mask"].to(dev)
-        
+
         # Generate
         with torch.no_grad():
             outputs = model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=max_new_tokens,
-                text_temperature=temperature,
-                text_top_p=top_p,
-                text_top_k=top_k,
                 audio_temperature=temperature,
                 audio_top_p=top_p,
                 audio_top_k=top_k,
+                audio_repetition_penalty=repetition_penalty,
             )
-        
+
         # Decode
         messages = processor.decode(outputs)
         if messages and len(messages) > 0:
             audio = messages[0].audio_codes_list[0]
             audio_np = audio.cpu().numpy()
             return (sample_rate, audio_np), "✅ Voice generation completed!"
-        
+
         return None, "❌ Error: No audio generated"
-        
+
     except Exception as e:
         error_msg = f"❌ Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
         print(error_msg)
@@ -413,20 +438,21 @@ def build_voice_gen_tab(args):
                     vg_temp = gr.Slider(0.1, 3.0, value=1.5, step=0.05, label="Temperature")
                     vg_top_p = gr.Slider(0.1, 1.0, value=0.8, step=0.01, label="Top P")
                     vg_top_k = gr.Slider(1, 200, value=25, step=1, label="Top K")
+                    vg_rep_penalty = gr.Slider(0.8, 2.0, value=1.0, step=0.05, label="Repetition Penalty")
                     vg_max_tokens = gr.Slider(256, 8192, value=4096, step=128, label="Max New Tokens")
-                
+
                 vg_generate_btn = gr.Button("✨ Generate Voice", variant="primary", size="lg")
-            
+
             with gr.Column(scale=1):
                 vg_output = gr.Audio(label="Generated Audio")
                 vg_status = gr.Textbox(label="Status", lines=3, interactive=False)
-                
+
                 gr.Markdown("**Example Descriptions:**")
                 gr.Markdown("- A middle-aged male with a deep, authoritative voice\n- A young child with a playful tone\n- An elderly woman with a warm, gentle voice")
-        
+
         vg_generate_btn.click(
             fn=lambda *x: run_voice_gen_inference(*x, args.device, args.attn_implementation),
-            inputs=[vg_instruction, vg_text, vg_temp, vg_top_p, vg_top_k, vg_max_tokens],
+            inputs=[vg_instruction, vg_text, vg_temp, vg_top_p, vg_top_k, vg_rep_penalty, vg_max_tokens],
             outputs=[vg_output, vg_status],
         )
 
@@ -437,9 +463,11 @@ def build_voice_gen_tab(args):
 
 def run_sound_effect_inference(
     description: str,
+    duration_seconds: float,
     temperature: float,
     top_p: float,
     top_k: int,
+    repetition_penalty: float,
     max_new_tokens: int,
     device: str,
     attn_implementation: str,
@@ -448,40 +476,41 @@ def run_sound_effect_inference(
     try:
         if not description or not description.strip():
             return None, "❌ Error: Please enter sound description"
-        
+
         model, processor, dev, sample_rate = load_model("sound_effect", device, attn_implementation)
-        
-        # Build conversation
-        conversation = [{"role": "user", "content": description}]
-        
+
+        # Convert duration to tokens (12.5 tokens/second)
+        expected_tokens = max(1, int(duration_seconds * TOKENS_PER_SECOND))
+
+        # Build conversation using build_user_message with duration control
+        conversation = [processor.build_user_message(text=description, tokens=expected_tokens)]
+
         # Process inputs
         batch = processor(conversation, mode="generation")
         input_ids = batch["input_ids"].to(dev)
         attention_mask = batch["attention_mask"].to(dev)
-        
+
         # Generate
         with torch.no_grad():
             outputs = model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=max_new_tokens,
-                text_temperature=temperature,
-                text_top_p=top_p,
-                text_top_k=top_k,
                 audio_temperature=temperature,
                 audio_top_p=top_p,
                 audio_top_k=top_k,
+                audio_repetition_penalty=repetition_penalty,
             )
-        
+
         # Decode
         messages = processor.decode(outputs)
         if messages and len(messages) > 0:
             audio = messages[0].audio_codes_list[0]
             audio_np = audio.cpu().numpy()
             return (sample_rate, audio_np), "✅ Sound effect generated!"
-        
+
         return None, "❌ Error: No audio generated"
-        
+
     except Exception as e:
         error_msg = f"❌ Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
         print(error_msg)
@@ -498,28 +527,34 @@ def build_sound_effect_tab(args):
             with gr.Column(scale=1):
                 se_description = gr.Textbox(
                     label="Sound Description",
-                    lines=6,
+                    lines=4,
                     placeholder="Describe the sound you want (e.g., 'Thunder and rain', 'City traffic', 'Forest birds')...",
                 )
-                
+                se_duration = gr.Slider(
+                    1, 60, value=10, step=1,
+                    label="Duration (seconds)",
+                    info="Target length of the generated sound effect.",
+                )
+
                 with gr.Accordion("Advanced Settings", open=False):
                     se_temp = gr.Slider(0.1, 3.0, value=1.5, step=0.05, label="Temperature")
                     se_top_p = gr.Slider(0.1, 1.0, value=0.8, step=0.01, label="Top P")
                     se_top_k = gr.Slider(1, 200, value=25, step=1, label="Top K")
+                    se_rep_penalty = gr.Slider(0.8, 2.0, value=1.0, step=0.05, label="Repetition Penalty")
                     se_max_tokens = gr.Slider(256, 8192, value=4096, step=128, label="Max New Tokens")
-                
+
                 se_generate_btn = gr.Button("🎵 Generate Sound", variant="primary", size="lg")
-            
+
             with gr.Column(scale=1):
                 se_output = gr.Audio(label="Generated Sound")
                 se_status = gr.Textbox(label="Status", lines=3, interactive=False)
-                
+
                 gr.Markdown("**Example Sounds:**")
                 gr.Markdown("- Ocean waves crashing on the beach\n- Busy city street with traffic\n- Birds chirping in a forest\n- Thunderstorm with heavy rain")
-        
+
         se_generate_btn.click(
             fn=lambda *x: run_sound_effect_inference(*x, args.device, args.attn_implementation),
-            inputs=[se_description, se_temp, se_top_p, se_top_k, se_max_tokens],
+            inputs=[se_description, se_duration, se_temp, se_top_p, se_top_k, se_rep_penalty, se_max_tokens],
             outputs=[se_output, se_status],
         )
 
