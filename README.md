@@ -22,9 +22,19 @@ This application is packaged for [Pinokio](https://pinokio.com/) for one-click i
 
 **Available Commands:**
 - **Install** - Sets up Python environment, installs dependencies, and configures PyTorch for your GPU
-- **Start** - Launches the Gradio UI at `http://localhost:7860`
+- **Start** - Launches the Gradio UI on `127.0.0.1` using Pinokio’s next available port (avoiding conflicts). After startup, use **Open Web UI** in Pinokio or the URL printed in the terminal.
 - **Update** - Pulls latest changes from repository
-- **Reset** - Removes environment for clean reinstall
+- **Reset** - Removes the `env` virtual environment for a clean reinstall
+
+## Programmatic access
+
+- **Pinokio (launcher scripts)** — Run actions from the Pinokio UI, or invoke scripts programmatically with Pinokio’s `script.start` API (for example from another launcher script) using the target script’s file name as `uri` and any `params` your flow needs. Launcher scripts live in the project root (`install.js`, `start.js`, `update.js`, `reset.js`, `link.js`).
+- **Python** — Application code lives under `app/`. After dependencies are installed (virtualenv at project root), from the repo root:  
+  `python app/app.py --host 127.0.0.1 --port <port>`  
+  Or: `cd app` then `python app.py ...`. Defaults in `app/app.py` are `--host` (platform-specific) and `--port 7860` if you omit flags.
+- **HTTP (curl)** — The Gradio server is a normal HTTP app. Once it is listening, you can probe it with curl, for example:  
+  `curl -sS -I http://127.0.0.1:<port>/`  
+  Replace `<port>` with the port shown at startup (Pinokio assigns a free port when you start from the launcher).
 
 ## System Requirements
 

@@ -18,6 +18,7 @@ module.exports = {
       method: "shell.run",
       params: {
         venv: "env",
+        path: "app",
         message: [
           "uv pip install -r requirements.txt"
         ],
@@ -30,6 +31,7 @@ module.exports = {
         uri: "torch.js",
         params: {
           venv: "env",
+          path: "app",
           flashattention: true,
           triton: true
         }

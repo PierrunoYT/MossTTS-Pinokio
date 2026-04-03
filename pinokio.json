@@ -1,0 +1,5 @@
+{
+  "title": "MOSS-TTS",
+  "description": "All-in-one Gradio UI for the MOSS-TTS Family: voice cloning, dialogue generation, voice design from text, and sound effects.",
+  "icon": "icon.jpg"
+}

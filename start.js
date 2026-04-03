@@ -12,19 +12,18 @@ module.exports = {
       params: {
         build: true,
         venv: "env",
+        path: "app",
         env: {
-          GRADIO_SERVER_NAME: "127.0.0.1",
-          GRADIO_SERVER_PORT: "7860",
           HF_HUB_ENABLE_HF_TRANSFER: "1",
           HF_HUB_DOWNLOAD_TIMEOUT: "300",
           PYTHONUTF8: "1",
           TORCHDYNAMO_SUPPRESS_ERRORS: "1"
         },
         message: [
-          "python app.py"
+          "python app.py --host 127.0.0.1 --port {{port}}"
         ],
         on: [{
-          event: "/http:\/\/\\S+/",
+          event: "/(http:\/\/\\S+)/",
           done: true
         }]
       }
@@ -32,7 +31,7 @@ module.exports = {
     {
       method: "local.set",
       params: {
-        url: "{{input.event[0]}}"
+        url: "{{input.event[1]}}"
       }
     },
     {
@@ -43,4 +42,3 @@ module.exports = {
     }
   ]
 }
-
