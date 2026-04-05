@@ -16,10 +16,22 @@ import argparse
 import functools
 import importlib.util
 import os
+import re
 import sys
 import tempfile
+import time
 import traceback
+from pathlib import Path
 from typing import Optional, Tuple
+
+try:
+    import orjson
+    def _json_loads(b):
+        return orjson.loads(b)
+except ImportError:
+    import json
+    def _json_loads(b):
+        return json.loads(b.decode() if isinstance(b, bytes) else b)
 
 import gradio as gr
 import numpy as np
@@ -53,6 +65,184 @@ TOKENS_PER_SECOND = 12.5
 
 # Max reference audio duration to avoid OOM in the audio tokenizer's self-attention
 MAX_REFERENCE_DURATION_SEC = 30.0
+
+# TTS continuation modes
+CONTINUATION_NOTICE = (
+    "Continuation mode is active. Make sure the reference audio transcript is prepended to the input text."
+)
+MODE_CLONE = "Clone"
+MODE_CONTINUE = "Continuation"
+MODE_CONTINUE_CLONE = "Continuation + Clone"
+
+# Duration estimation constants (tokens per character by language)
+ZH_TOKENS_PER_CHAR = 3.098411951313033
+EN_TOKENS_PER_CHAR = 0.8673376262755219
+
+# Example asset paths (mirrors the HF Space layout)
+REFERENCE_AUDIO_DIR = Path(__file__).resolve().parent / "assets" / "audio"
+EXAMPLE_TEXTS_JSONL_PATH = (
+    Path(__file__).resolve().parent / "assets" / "text" / "moss_tts_example_texts.jsonl"
+)
+
+PRELOAD_ENV_VAR = "MOSS_TTS_PRELOAD_AT_STARTUP"
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+def parse_bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def parse_port(value: Optional[str], default: int) -> int:
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def detect_text_language(text: str) -> str:
+    zh_chars = len(re.findall(r"[\u4e00-\u9fff]", text))
+    en_chars = len(re.findall(r"[A-Za-z]", text))
+    if zh_chars == 0 and en_chars == 0:
+        return "en"
+    return "zh" if zh_chars >= en_chars else "en"
+
+
+def supports_duration_control(mode_with_reference: str) -> bool:
+    return mode_with_reference not in {MODE_CONTINUE, MODE_CONTINUE_CLONE}
+
+
+def estimate_duration_tokens(text: str) -> Tuple[str, int, int, int]:
+    normalized = text or ""
+    effective_len = max(len(normalized), 1)
+    language = detect_text_language(normalized)
+    factor = ZH_TOKENS_PER_CHAR if language == "zh" else EN_TOKENS_PER_CHAR
+    default_tokens = max(1, int(effective_len * factor))
+    min_tokens = max(1, int(default_tokens * 0.5))
+    max_tokens = max(min_tokens, int(default_tokens * 1.5))
+    return language, default_tokens, min_tokens, max_tokens
+
+
+def update_duration_controls(enabled: bool, text: str, current_tokens, mode_with_reference: str):
+    if not supports_duration_control(mode_with_reference):
+        return (
+            gr.update(visible=False),
+            "Duration control is disabled for Continuation modes.",
+            gr.update(value=False, interactive=False),
+        )
+    checkbox_update = gr.update(interactive=True)
+    if not enabled:
+        return gr.update(visible=False), "Duration control is disabled.", checkbox_update
+
+    language, default_tokens, min_tokens, max_tokens = estimate_duration_tokens(text)
+    if current_tokens is None or int(current_tokens) == 1:
+        slider_value = default_tokens
+    else:
+        slider_value = int(current_tokens)
+        slider_value = max(min_tokens, min(max_tokens, slider_value))
+
+    language_label = "Chinese" if language == "zh" else "English"
+    hint = (
+        f"Duration control enabled | detected language: {language_label} | "
+        f"default={default_tokens}, range=[{min_tokens}, {max_tokens}]"
+    )
+    return (
+        gr.update(visible=True, minimum=min_tokens, maximum=max_tokens, value=slider_value, step=1),
+        hint,
+        checkbox_update,
+    )
+
+
+def render_mode_hint(reference_audio: Optional[str], mode_with_reference: str) -> str:
+    if not reference_audio:
+        return "Current mode: **Direct Generation** (no reference audio uploaded)"
+    if mode_with_reference == MODE_CLONE:
+        return "Current mode: **Clone** (speaker timbre will be cloned from the reference audio)"
+    return f"Current mode: **{mode_with_reference}**  \n> {CONTINUATION_NOTICE}"
+
+
+def build_tts_conversation(
+    text: str,
+    reference_audio: Optional[str],
+    mode_with_reference: str,
+    expected_tokens: Optional[int],
+    processor,
+):
+    user_kwargs = {"text": text}
+    if expected_tokens is not None:
+        user_kwargs["tokens"] = int(expected_tokens)
+
+    if not reference_audio:
+        return [[processor.build_user_message(**user_kwargs)]], "generation", "Direct Generation"
+
+    if mode_with_reference == MODE_CLONE:
+        clone_kwargs = dict(user_kwargs, reference=[reference_audio])
+        return [[processor.build_user_message(**clone_kwargs)]], "generation", MODE_CLONE
+
+    if mode_with_reference == MODE_CONTINUE:
+        conversations = [[
+            processor.build_user_message(**user_kwargs),
+            processor.build_assistant_message(audio_codes_list=[reference_audio]),
+        ]]
+        return conversations, "continuation", MODE_CONTINUE
+
+    # Continuation + Clone
+    continue_clone_kwargs = dict(user_kwargs, reference=[reference_audio])
+    conversations = [[
+        processor.build_user_message(**continue_clone_kwargs),
+        processor.build_assistant_message(audio_codes_list=[reference_audio]),
+    ]]
+    return conversations, "continuation", MODE_CONTINUE_CLONE
+
+
+def _parse_example_id(example_id: str) -> Optional[Tuple[str, int]]:
+    matched = re.fullmatch(r"(zh|en)/(\d+)", (example_id or "").strip())
+    if matched is None:
+        return None
+    return matched.group(1), int(matched.group(2))
+
+
+def _resolve_reference_audio_path(language: str, index: int) -> Optional[Path]:
+    for stem in [f"reference_{language}_{index}"]:
+        for ext in (".wav", ".mp3"):
+            audio_path = REFERENCE_AUDIO_DIR / f"{stem}{ext}"
+            if audio_path.exists():
+                return audio_path
+    return None
+
+
+def build_example_rows() -> list:
+    rows = []
+    if not EXAMPLE_TEXTS_JSONL_PATH.exists():
+        return rows
+    try:
+        with open(EXAMPLE_TEXTS_JSONL_PATH, "rb") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                sample = _json_loads(line)
+                parsed = _parse_example_id(sample.get("id", ""))
+                if parsed is None:
+                    continue
+                language, index = parsed
+                text = str(sample.get("text", "")).strip()
+                audio_path = _resolve_reference_audio_path(language, index)
+                if audio_path is None:
+                    continue
+                rows.append((sample.get("role", ""), str(audio_path), text))
+    except Exception as e:
+        print(f"⚠️  Could not load example rows: {e}")
+    return rows
+
+
+EXAMPLE_ROWS = build_example_rows()
+
 
 # ============================================================================
 # Model Loading
@@ -194,7 +384,9 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
 def run_tts_inference(
     text: str,
     reference_audio: Optional[str],
-    duration_seconds: float,
+    mode_with_reference: str,
+    duration_control_enabled: bool,
+    duration_tokens: int,
     model_variant: str,
     temperature: float,
     top_p: float,
@@ -204,7 +396,8 @@ def run_tts_inference(
     device: str,
     attn_implementation: str,
 ) -> Tuple[Optional[Tuple[int, np.ndarray]], str]:
-    """Run MOSS-TTS inference."""
+    """Run MOSS-TTS inference with support for Clone, Continuation, and Continuation+Clone modes."""
+    started_at = time.monotonic()
     _ref_tmp = None
     try:
         if not text or not text.strip():
@@ -213,49 +406,67 @@ def run_tts_inference(
         model_key = "tts_local" if model_variant == "MOSS-TTS-Local (1.7B)" else "tts"
         model, processor, dev, sample_rate = load_model(model_key, device, attn_implementation)
 
-        # Build message kwargs
-        msg_kwargs = {"text": text}
+        # Truncate reference audio to avoid OOM if needed
+        resolved_ref = None
         if reference_audio:
             _ref_tmp = _truncate_reference_audio(reference_audio)
-            msg_kwargs["reference"] = [_ref_tmp]
-        if duration_seconds > 0:
-            msg_kwargs["tokens"] = max(1, int(duration_seconds * TOKENS_PER_SECOND))
+            resolved_ref = _ref_tmp
 
-        # Build conversation
-        conversation = [processor.build_user_message(**msg_kwargs)]
+        # Compute expected tokens from the smart duration control
+        duration_enabled = bool(duration_control_enabled and supports_duration_control(mode_with_reference))
+        expected_tokens = int(duration_tokens) if duration_enabled else None
 
-        # Process inputs
-        batch = processor(conversation, mode="generation")
+        # Build conversation (handles all four modes)
+        conversations, mode, mode_name = build_tts_conversation(
+            text=text,
+            reference_audio=resolved_ref,
+            mode_with_reference=mode_with_reference,
+            expected_tokens=expected_tokens,
+            processor=processor,
+        )
+
+        batch = processor(conversations, mode=mode)
         input_ids = batch["input_ids"].to(dev)
         attention_mask = batch["attention_mask"].to(dev)
 
-        # Generate
         with torch.no_grad():
             outputs = model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=max_new_tokens,
-                text_temperature=temperature,
-                text_top_p=top_p,
-                text_top_k=top_k,
-                audio_temperature=temperature,
-                audio_top_p=top_p,
-                audio_top_k=top_k,
-                audio_repetition_penalty=repetition_penalty,
+                audio_temperature=float(temperature),
+                audio_top_p=float(top_p),
+                audio_top_k=int(top_k),
+                audio_repetition_penalty=float(repetition_penalty),
             )
 
-        # Decode
         messages = processor.decode(outputs)
-        if messages and len(messages) > 0:
-            audio = messages[0].audio_codes_list[0]
-            audio_np = audio.cpu().numpy()
-            if _ref_tmp and _ref_tmp != reference_audio:
-                os.unlink(_ref_tmp)
-            return (sample_rate, audio_np), "✅ Generation completed successfully!"
+        if not messages or messages[0] is None:
+            raise RuntimeError("The model did not return a decodable audio result.")
+
+        audio = messages[0].audio_codes_list[0]
+        if isinstance(audio, torch.Tensor):
+            audio_np = audio.detach().float().cpu().numpy()
+        else:
+            audio_np = np.asarray(audio, dtype=np.float32)
+        if audio_np.ndim > 1:
+            audio_np = audio_np.reshape(-1)
+        audio_np = audio_np.astype(np.float32, copy=False)
 
         if _ref_tmp and _ref_tmp != reference_audio:
-            os.unlink(_ref_tmp)
-        return None, "❌ Error: No audio generated"
+            try:
+                os.unlink(_ref_tmp)
+            except OSError:
+                pass
+
+        elapsed = time.monotonic() - started_at
+        status = (
+            f"✅ Done | mode: {mode_name} | elapsed: {elapsed:.2f}s | "
+            f"max_new_tokens={max_new_tokens}, "
+            f"expected_tokens={expected_tokens if expected_tokens is not None else 'off'}, "
+            f"temperature={temperature:.2f}, top_p={top_p:.2f}, top_k={top_k}"
+        )
+        return (sample_rate, audio_np), status
 
     except Exception as e:
         if _ref_tmp and _ref_tmp != reference_audio:
@@ -272,7 +483,7 @@ def build_tts_tab(args):
     """Build the MOSS-TTS tab."""
     with gr.Column():
         gr.Markdown("### 🎙️ MOSS-TTS - High-Quality Voice Cloning")
-        gr.Markdown("Generate speech with or without reference audio for voice cloning.")
+        gr.Markdown("Generate speech with or without reference audio. Supports voice cloning and continuation modes.")
 
         tts_model_variant = gr.Radio(
             choices=["MOSS-TTS (8B)", "MOSS-TTS-Local (1.7B)"],
@@ -282,24 +493,36 @@ def build_tts_tab(args):
         )
 
         with gr.Row():
-            with gr.Column(scale=1):
+            with gr.Column(scale=3):
                 tts_text = gr.Textbox(
                     label="Text to Synthesize",
                     lines=8,
-                    placeholder="Enter text here...",
+                    placeholder="Enter text here. In Continuation modes, prepend the reference audio transcript.",
                 )
                 tts_reference = gr.Audio(
-                    label="Reference Audio (Optional - for voice cloning)",
+                    label="Reference Audio (Optional)",
                     type="filepath",
                 )
-
-                tts_duration = gr.Slider(
-                    0, 60, value=0, step=1,
-                    label="Duration (seconds, 0 = auto)",
-                    info="Set target audio length. 0 lets the model decide.",
+                tts_mode = gr.Radio(
+                    choices=[MODE_CLONE, MODE_CONTINUE, MODE_CONTINUE_CLONE],
+                    value=MODE_CLONE,
+                    label="Mode with Reference Audio",
+                    info="If no reference audio is uploaded, Direct Generation is used automatically.",
                 )
+                tts_mode_hint = gr.Markdown(render_mode_hint(None, MODE_CLONE))
 
-                with gr.Accordion("Advanced Settings", open=False):
+                tts_duration_enabled = gr.Checkbox(
+                    value=False,
+                    label="Enable Duration Control (Expected Audio Tokens)",
+                )
+                tts_duration_tokens = gr.Slider(
+                    minimum=1, maximum=1, step=1, value=1,
+                    label="expected_tokens",
+                    visible=False,
+                )
+                tts_duration_hint = gr.Markdown("Duration control is disabled.")
+
+                with gr.Accordion("Sampling Parameters", open=False):
                     tts_temp = gr.Slider(0.1, 3.0, value=1.7, step=0.05, label="Temperature")
                     tts_top_p = gr.Slider(0.1, 1.0, value=0.8, step=0.01, label="Top P")
                     tts_top_k = gr.Slider(1, 200, value=25, step=1, label="Top K")
@@ -308,13 +531,70 @@ def build_tts_tab(args):
 
                 tts_generate_btn = gr.Button("🎵 Generate Speech", variant="primary", size="lg")
 
-            with gr.Column(scale=1):
+            with gr.Column(scale=2):
                 tts_output = gr.Audio(label="Generated Audio")
-                tts_status = gr.Textbox(label="Status", lines=3, interactive=False)
+                tts_status = gr.Textbox(label="Status", lines=4, interactive=False)
+
+                if EXAMPLE_ROWS:
+                    tts_examples = gr.Dataframe(
+                        headers=["Reference Speaker", "Example Text"],
+                        value=[[name, text] for name, _, text in EXAMPLE_ROWS],
+                        datatype=["str", "str"],
+                        row_count=(len(EXAMPLE_ROWS), "fixed"),
+                        col_count=(2, "fixed"),
+                        interactive=False,
+                        wrap=True,
+                        label="Examples — click a row to fill inputs",
+                    )
+
+        # Mode hint reactivity
+        tts_reference.change(
+            fn=render_mode_hint,
+            inputs=[tts_reference, tts_mode],
+            outputs=[tts_mode_hint],
+        )
+        tts_mode.change(
+            fn=render_mode_hint,
+            inputs=[tts_reference, tts_mode],
+            outputs=[tts_mode_hint],
+        )
+
+        # Duration control reactivity
+        for trigger in [tts_duration_enabled, tts_text, tts_mode]:
+            trigger.change(
+                fn=update_duration_controls,
+                inputs=[tts_duration_enabled, tts_text, tts_duration_tokens, tts_mode],
+                outputs=[tts_duration_tokens, tts_duration_hint, tts_duration_enabled],
+            )
+
+        # Example row click handler
+        if EXAMPLE_ROWS:
+            def _apply_example(mode, dur_enabled, dur_tokens, evt: gr.SelectData):
+                if evt is None or evt.index is None:
+                    return [gr.update()] * 6
+                row_idx = int(evt.index[0]) if isinstance(evt.index, (tuple, list)) else int(evt.index)
+                if row_idx < 0 or row_idx >= len(EXAMPLE_ROWS):
+                    return [gr.update()] * 6
+                _, audio_path, example_text = EXAMPLE_ROWS[row_idx]
+                dur_slider, dur_hint, dur_checkbox = update_duration_controls(
+                    dur_enabled, example_text, dur_tokens, mode
+                )
+                return audio_path, example_text, render_mode_hint(audio_path, mode), dur_slider, dur_hint, dur_checkbox
+
+            tts_examples.select(
+                fn=_apply_example,
+                inputs=[tts_mode, tts_duration_enabled, tts_duration_tokens],
+                outputs=[tts_reference, tts_text, tts_mode_hint, tts_duration_tokens, tts_duration_hint, tts_duration_enabled],
+            )
 
         tts_generate_btn.click(
             fn=lambda *x: run_tts_inference(*x, args.device, args.attn_implementation),
-            inputs=[tts_text, tts_reference, tts_duration, tts_model_variant, tts_temp, tts_top_p, tts_top_k, tts_rep_penalty, tts_max_tokens],
+            inputs=[
+                tts_text, tts_reference, tts_mode,
+                tts_duration_enabled, tts_duration_tokens,
+                tts_model_variant,
+                tts_temp, tts_top_p, tts_top_k, tts_rep_penalty, tts_max_tokens,
+            ],
             outputs=[tts_output, tts_status],
         )
 
@@ -340,7 +620,6 @@ def run_ttsd_inference(
             return None, "❌ Error: Please enter dialogue script"
 
         # Validate speaker tags
-        import re
         used_speakers = set(int(m) for m in re.findall(r'\[S(\d+)\]', script_text))
         if not used_speakers:
             return None, "❌ Error: Dialogue must include speaker tags like [S1], [S2], ..."
@@ -857,14 +1136,22 @@ def build_unified_interface(args):
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="MOSS-TTS Unified Interface")
+    parser.add_argument("--model_path", type=str, default=MODELS["tts"])
     parser.add_argument("--device", type=str, default="cuda:0", help="Device to use (e.g., cuda:0, cpu)")
     parser.add_argument("--attn_implementation", type=str, default="auto", help="Attention implementation")
     _default_host = "127.0.0.1" if sys.platform == "win32" else "0.0.0.0"
     parser.add_argument("--host", type=str, default=_default_host, help="Host to bind to")
-    parser.add_argument("--port", type=int, default=7860, help="Port to bind to")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=parse_port(os.getenv("GRADIO_SERVER_PORT", os.getenv("PORT")), 7860),
+    )
     parser.add_argument("--share", action="store_true", help="Create a public share link")
     args = parser.parse_args()
-    
+
+    args.host = os.getenv("GRADIO_SERVER_NAME", args.host)
+    args.port = parse_port(os.getenv("GRADIO_SERVER_PORT", os.getenv("PORT")), args.port)
+
     # Resolve attention implementation
     runtime_device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     runtime_dtype = torch.bfloat16 if runtime_device.type == "cuda" else torch.float32
@@ -873,7 +1160,7 @@ def main():
         device=runtime_device,
         dtype=runtime_dtype,
     ) or "none"
-    
+
     print("=" * 70)
     print("MOSS-TTS Unified Interface")
     print("=" * 70)
@@ -881,22 +1168,42 @@ def main():
     print(f"Attention: {args.attn_implementation}")
     print(f"Host: {args.host}:{args.port}")
     print(f"Share: {args.share}")
+    print(f"Examples loaded: {len(EXAMPLE_ROWS)}")
     print("=" * 70)
+
+    # Preload the main TTS model at startup (skip on HF Spaces where GPU time is metered)
+    preload_enabled = parse_bool_env(PRELOAD_ENV_VAR, default=not bool(os.getenv("SPACE_ID")))
+    if preload_enabled:
+        preload_started_at = time.monotonic()
+        print(
+            f"[Startup] Preloading TTS backend: device={args.device}, attn={args.attn_implementation}",
+            flush=True,
+        )
+        try:
+            load_model("tts", args.device, args.attn_implementation)
+            print(
+                f"[Startup] Backend preload finished in {time.monotonic() - preload_started_at:.2f}s",
+                flush=True,
+            )
+        except Exception as exc:
+            print(f"[Startup] Preload failed (will load on first request): {exc}", flush=True)
+    else:
+        print(f"[Startup] Skipping preload (set {PRELOAD_ENV_VAR}=1 to enable).", flush=True)
+
     print("\n⏳ Building interface...")
-    
-    # Build and launch
     app = build_unified_interface(args)
-    
+
     print("✅ Interface ready!")
-    print(f"🌐 Access at: http://localhost:{args.port}")
+    print(f"🌐 Access at: http://{args.host}:{args.port}")
     if args.share:
         print("🔗 Public link will be generated...")
-    print("\n")
-    
+    print()
+
     app.queue(max_size=20, default_concurrency_limit=1).launch(
         server_name=args.host,
         server_port=args.port,
         share=args.share,
+        ssr_mode=False,
     )
 
 
