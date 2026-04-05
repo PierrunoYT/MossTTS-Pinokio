@@ -22,6 +22,7 @@ import numpy as np
 import soundfile as sf
 import torch
 
+from config import TTSD_VERSIONS
 from model_loader import load_model
 
 # ---------------------------------------------------------------------------
@@ -98,7 +99,7 @@ PRESET_TABLE_ROWS, PRESET_TABLE_ROW_TO_PRESET = _build_preset_table_rows()
 
 def normalize_text(text: str) -> str:
     text = re.sub(r"\[(\d+)\]", r"[S\1]", text)
-    remove_chars = "【】《》（）『』「」" '"-_""～~'''"
+    remove_chars = '【】《》（）『』「」\u201c\u201d\u2018\u2019"-_\u201c\u201d\uff5e~\u2018\u2019\u2019\u201c'
 
     segments = re.split(r"(?=\[S\d+\])", text.replace("\n", " "))
     processed_parts = []
@@ -305,13 +306,15 @@ def run_ttsd_inference(
     reference_audio_values = all_inputs[:MAX_SPEAKERS]
     prompt_text_values = all_inputs[MAX_SPEAKERS: 2 * MAX_SPEAKERS]
     dialogue_text = all_inputs[2 * MAX_SPEAKERS]
+    model_variant = all_inputs[2 * MAX_SPEAKERS + 1]
     text_normalize, sample_rate_normalize, temperature, top_p, top_k, repetition_penalty, max_new_tokens = (
-        all_inputs[2 * MAX_SPEAKERS + 1:]
+        all_inputs[2 * MAX_SPEAKERS + 2:]
     )
 
     started_at = time.monotonic()
     try:
-        model, processor, dev, sample_rate = load_model("ttsd", device, attn_implementation)
+        model_key = TTSD_VERSIONS.get(model_variant, "ttsd")
+        model, processor, dev, sample_rate = load_model(model_key, device, attn_implementation)
 
         text_normalize = bool(text_normalize)
         sample_rate_normalize = bool(sample_rate_normalize)
@@ -448,6 +451,13 @@ def build_ttsd_tab(args):
                     info="Minimum 1, maximum 5.",
                 )
 
+                ttsd_model_variant = gr.Radio(
+                    choices=list(TTSD_VERSIONS.keys()),
+                    value=list(TTSD_VERSIONS.keys())[0],
+                    label="Model Version",
+                    info="v1.0 (8B) is recommended. Older versions are 2B and may have lower quality.",
+                )
+
                 gr.Markdown("### Voice Cloning (Optional)")
                 gr.Markdown(
                     "Provide both reference audio **and** prompt text for a speaker to clone their voice. "
@@ -540,6 +550,7 @@ def build_ttsd_tab(args):
                 *speaker_refs,
                 *speaker_prompts,
                 dialogue_text,
+                ttsd_model_variant,
                 text_normalize,
                 sample_rate_normalize,
                 temperature, top_p, top_k, repetition_penalty, max_new_tokens,

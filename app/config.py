@@ -17,9 +17,24 @@ MODELS = {
     "tts": "OpenMOSS-Team/MOSS-TTS",
     "tts_local": "OpenMOSS-Team/MOSS-TTS-Local-Transformer",
     "ttsd": "OpenMOSS-Team/MOSS-TTSD-v1.0",
+    "ttsd_v0.7": "OpenMOSS-Team/MOSS-TTSD-v0.7",
+    "ttsd_v0.5": "OpenMOSS-Team/MOSS-TTSD-v0.5",
+    "ttsd_v0": "OpenMOSS-Team/MOSS-TTSD-v0",
     "voice_gen": "OpenMOSS-Team/MOSS-VoiceGenerator",
     "sound_effect": "OpenMOSS-Team/MOSS-SoundEffect",
     "realtime": "OpenMOSS-Team/MOSS-TTS-Realtime",
+}
+
+# MOSS-Speech uses a separate codec and different processor API
+SPEECH_MODEL_PATH = "OpenMOSS-Team/MOSS-Speech"
+SPEECH_CODEC_PATH = "OpenMOSS-Team/MOSS-Speech-Codec"
+
+# TTSD version display names → model keys
+TTSD_VERSIONS = {
+    "MOSS-TTSD v1.0 (8B) — recommended": "ttsd",
+    "MOSS-TTSD v0.7 (2B)": "ttsd_v0.7",
+    "MOSS-TTSD v0.5 (2B)": "ttsd_v0.5",
+    "MOSS-TTSD v0 (2B)": "ttsd_v0",
 }
 
 CODEC_MODEL_PATH = "OpenMOSS-Team/MOSS-Audio-Tokenizer"

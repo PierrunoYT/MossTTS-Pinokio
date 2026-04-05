@@ -17,7 +17,9 @@ module.exports = {
           HF_HUB_ENABLE_HF_TRANSFER: "1",
           HF_HUB_DOWNLOAD_TIMEOUT: "300",
           PYTHONUTF8: "1",
-          TORCHDYNAMO_SUPPRESS_ERRORS: "1"
+          TORCHDYNAMO_SUPPRESS_ERRORS: "1",
+          MOSS_TTS_PRELOAD_AT_STARTUP: "0",
+          HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
         },
         message: [
           "python app.py --host 127.0.0.1 --port {{port}}"
@@ -37,7 +39,7 @@ module.exports = {
     {
       method: "notify",
       params: {
-        html: "✅ MOSS-TTS running! Voice cloning • Dialogue • Sound effects"
+        html: "✅ MOSS-TTS running! Voice cloning • Dialogue • Speech-to-Speech • Sound effects"
       }
     }
   ]

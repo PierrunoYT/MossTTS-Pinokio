@@ -58,16 +58,27 @@ def _resolve_hf_path(repo_id: str) -> str:
     Pre-downloading with ``snapshot_download`` gives us a real local path.
 
     Retries up to 5 times on network errors; each attempt resumes thanks to
-    HuggingFace Hub's local cache.
+    HuggingFace Hub's local cache.  After each attempt we verify the snapshot
+    contains at least a ``config.json`` — if not, the partial cache is purged
+    so the next attempt starts fresh.
     """
     if sys.platform == "win32" and "/" in repo_id and not os.path.isdir(repo_id):
         from huggingface_hub import snapshot_download
+        import shutil
 
         max_attempts = 5
         for attempt in range(1, max_attempts + 1):
             try:
-                return snapshot_download(repo_id)
+                local_path = snapshot_download(repo_id)
+                # Validate the snapshot is usable (not a partial download)
+                if not os.path.isfile(os.path.join(local_path, "config.json")):
+                    raise RuntimeError(
+                        f"Incomplete download: config.json missing in {local_path}"
+                    )
+                return local_path
             except Exception as exc:
+                # Purge partial cache so the next attempt doesn't reuse it
+                _purge_partial_cache(repo_id)
                 if attempt == max_attempts:
                     raise
                 wait = attempt * 5
@@ -77,6 +88,21 @@ def _resolve_hf_path(repo_id: str) -> str:
                 )
                 time.sleep(wait)
     return repo_id
+
+
+def _purge_partial_cache(repo_id: str) -> None:
+    """Remove a partially-downloaded HuggingFace Hub cache for *repo_id*."""
+    import shutil
+    try:
+        from huggingface_hub.constants import HF_HUB_CACHE
+    except ImportError:
+        return
+    # HF Hub stores models in folders like "models--Org--Repo"
+    cache_dir_name = "models--" + repo_id.replace("/", "--")
+    cache_path = os.path.join(HF_HUB_CACHE, cache_dir_name)
+    if os.path.isdir(cache_path):
+        print(f"🗑️  Purging incomplete cache: {cache_path}")
+        shutil.rmtree(cache_path, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +135,7 @@ def _truncate_reference_audio(
 # Cached model loader
 # ---------------------------------------------------------------------------
 
-@functools.lru_cache(maxsize=6)
+@functools.lru_cache(maxsize=10)
 def load_model(model_key: str, device_str: str, attn_implementation: str):
     """Load and LRU-cache a model + processor pair."""
     device = torch.device(device_str if torch.cuda.is_available() else "cpu")

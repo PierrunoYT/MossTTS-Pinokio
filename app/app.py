@@ -28,6 +28,7 @@ from tabs.ttsd import build_ttsd_tab
 from tabs.voice_gen import build_voice_gen_tab
 from tabs.sound_effect import build_sound_effect_tab
 from tabs.realtime import build_realtime_tab
+from tabs.speech import build_speech_tab
 from tabs.info import build_info_tab
 
 
@@ -63,6 +64,8 @@ def build_unified_interface(args):
                 build_tts_tab(args)
             with gr.Tab("💬 TTSD - Dialogue"):
                 build_ttsd_tab(args)
+            with gr.Tab("🗣️ Speech-to-Speech"):
+                build_speech_tab(args)
             with gr.Tab("🎨 Voice Generator"):
                 build_voice_gen_tab(args)
             with gr.Tab("🔊 Sound Effects"):

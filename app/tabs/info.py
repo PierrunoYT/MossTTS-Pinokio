@@ -31,6 +31,11 @@ Generate environmental sounds and effects from text descriptions.
 Low-latency streaming TTS optimised for real-time voice agents.
 Achieves ~180 ms TTFB after warm-up (1.7B model).
 
+### 🗣️ MOSS-Speech
+True speech-to-speech language model (9B) that works without text guidance.
+Supports all four interaction modes: Speech→Speech, Speech→Text, Text→Speech, Text→Text.
+Preserves paralinguistic cues like tone, emotion, and prosody. Bilingual (Chinese/English).
+
 ## 🚀 Quick Start
 
 1. **Choose a tab** for the model you want to use
@@ -49,7 +54,9 @@ Achieves ~180 ms TTFB after warm-up (1.7B model).
 ## 📖 Learn More
 
 - [GitHub Repository](https://github.com/OpenMOSS/MOSS-TTS)
-- [Model Cards on HuggingFace](https://huggingface.co/collections/OpenMOSS-Team/moss-tts)
+- [MOSS-TTS Collection](https://huggingface.co/collections/OpenMOSS-Team/moss-tts)
+- [MOSS-TTSD Collection](https://huggingface.co/collections/OpenMOSS-Team/moss-ttsd)
+- [MOSS-Speech Collection](https://huggingface.co/collections/OpenMOSS-Team/moss-speech)
 - [MOSI.AI Website](https://mosi.cn/models/moss-tts)
 
 ## 📝 License
