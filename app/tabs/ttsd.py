@@ -22,7 +22,7 @@ import numpy as np
 import soundfile as sf
 import torch
 
-from model_loader import download_model_files, load_model
+from model_loader import download_model_files_for_keys, load_model
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -427,6 +427,14 @@ def run_ttsd_inference(
         return None, error_msg
 
 
+def _download_ttsd_models() -> str:
+    """Prefetch MOSS-TTSD checkpoint and MOSS-Audio-Tokenizer (codec / tokenizer weights)."""
+    try:
+        return download_model_files_for_keys(["ttsd"])
+    except Exception as e:
+        return f"❌ Download failed: {e}"
+
+
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
@@ -549,7 +557,7 @@ def build_ttsd_tab(args):
         )
 
         ttsd_download_btn.click(
-            fn=lambda: download_model_files("ttsd"),
+            fn=_download_ttsd_models,
             inputs=[],
             outputs=[ttsd_status],
         )

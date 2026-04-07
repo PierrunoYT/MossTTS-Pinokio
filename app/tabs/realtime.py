@@ -7,7 +7,7 @@ import gradio as gr
 import numpy as np
 import torch
 
-from model_loader import download_model_files, load_realtime_model
+from model_loader import download_model_files_for_keys, load_realtime_model
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +69,14 @@ def run_realtime_inference(
         return None, error_msg
 
 
+def _download_realtime_models() -> str:
+    """Prefetch MOSS-TTS-Realtime, text tokenizer assets, and MOSS-Audio-Tokenizer codec."""
+    try:
+        return download_model_files_for_keys(["realtime"])
+    except Exception as e:
+        return f"❌ Download failed: {e}"
+
+
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
@@ -125,7 +133,7 @@ def build_realtime_tab(args):
         )
 
         rt_download_btn.click(
-            fn=lambda: download_model_files("realtime"),
+            fn=_download_realtime_models,
             inputs=[],
             outputs=[rt_status],
         )

@@ -109,38 +109,65 @@ def _truncate_reference_audio(
 # Cached model loader
 # ---------------------------------------------------------------------------
 
+def _snapshot_download_repo(repo_id: str) -> None:
+    """Download one repo snapshot into the Hugging Face cache with retries."""
+    from huggingface_hub import snapshot_download
+
+    print(f"Downloading {repo_id}…")
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            snapshot_download(repo_id)
+            print(f"✓ {repo_id} downloaded")
+            return
+        except Exception as exc:
+            if attempt == max_attempts:
+                raise
+            wait = attempt * 5
+            print(
+                f"⚠️  Download interrupted ({exc.__class__.__name__}: {exc}). "
+                f"Retrying in {wait}s… (attempt {attempt}/{max_attempts})"
+            )
+            time.sleep(wait)
+
+
+def _repos_for_download(model_keys: list[str]) -> list[str]:
+    """HF repo IDs needed for inference: main checkpoint(s) + shared audio tokenizer.
+
+    MossTTSDelayProcessor loads the codec from ``OpenMOSS-Team/MOSS-Audio-Tokenizer``
+    by default (tokenizer + weights live in that repo). The realtime stack also
+    loads that codec explicitly. Deduplicate while preserving order.
+    """
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for key in model_keys:
+        rid = MODELS[key]
+        if rid not in seen:
+            seen.add(rid)
+            ordered.append(rid)
+    if CODEC_MODEL_PATH not in seen:
+        ordered.append(CODEC_MODEL_PATH)
+    return ordered
+
+
+def download_model_files_for_keys(model_keys: list[str]) -> str:
+    """Download all Hugging Face repos used when loading these model keys (main + codec)."""
+    repos = _repos_for_download(model_keys)
+    for repo_id in repos:
+        _snapshot_download_repo(repo_id)
+    return f"✅ Downloaded successfully: {', '.join(repos)}"
+
+
 def download_model_files(model_key: str) -> str:
     """Download model files to the HuggingFace cache without loading into GPU.
 
+    Fetches the tab's main checkpoint repo and the shared MOSS-Audio-Tokenizer
+    (processor, tokenizer assets, and codec weights), matching ``load_model`` /
+    ``load_realtime_model`` behavior.
+
     Returns a status message.
     """
-    from huggingface_hub import snapshot_download
-
-    repos_to_download = [MODELS[model_key]]
-
-    # Some models also need the codec
-    if model_key in {"ttsd", "realtime"}:
-        repos_to_download.append(CODEC_MODEL_PATH)
-
-    for repo_id in repos_to_download:
-        print(f"Downloading {repo_id}…")
-        max_attempts = 5
-        for attempt in range(1, max_attempts + 1):
-            try:
-                snapshot_download(repo_id)
-                print(f"✓ {repo_id} downloaded")
-                break
-            except Exception as exc:
-                if attempt == max_attempts:
-                    raise
-                wait = attempt * 5
-                print(
-                    f"⚠️  Download interrupted ({exc.__class__.__name__}: {exc}). "
-                    f"Retrying in {wait}s… (attempt {attempt}/{max_attempts})"
-                )
-                time.sleep(wait)
-
-    return f"✅ {MODELS[model_key]} downloaded successfully!"
+    return download_model_files_for_keys([model_key])
 
 
 @functools.lru_cache(maxsize=6)

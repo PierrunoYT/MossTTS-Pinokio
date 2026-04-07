@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 from config import TOKENS_PER_SECOND
-from model_loader import download_model_files, load_model
+from model_loader import download_model_files_for_keys, load_model
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +62,14 @@ def run_sound_effect_inference(
         return None, error_msg
 
 
+def _download_sound_effect_models() -> str:
+    """Prefetch main checkpoint and MOSS-Audio-Tokenizer (codec / tokenizer weights)."""
+    try:
+        return download_model_files_for_keys(["sound_effect"])
+    except Exception as e:
+        return f"❌ Download failed: {e}"
+
+
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
@@ -113,7 +121,7 @@ def build_sound_effect_tab(args):
         )
 
         se_download_btn.click(
-            fn=lambda: download_model_files("sound_effect"),
+            fn=_download_sound_effect_models,
             inputs=[],
             outputs=[se_status],
         )

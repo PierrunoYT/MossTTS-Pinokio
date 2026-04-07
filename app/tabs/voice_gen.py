@@ -7,7 +7,7 @@ import gradio as gr
 import numpy as np
 import torch
 
-from model_loader import download_model_files, load_model
+from model_loader import download_model_files_for_keys, load_model
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +62,14 @@ def run_voice_gen_inference(
         return None, error_msg
 
 
+def _download_voice_gen_models() -> str:
+    """Prefetch main checkpoint and MOSS-Audio-Tokenizer (codec / tokenizer weights)."""
+    try:
+        return download_model_files_for_keys(["voice_gen"])
+    except Exception as e:
+        return f"❌ Download failed: {e}"
+
+
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
@@ -112,7 +120,7 @@ def build_voice_gen_tab(args):
         )
 
         vg_download_btn.click(
-            fn=lambda: download_model_files("voice_gen"),
+            fn=_download_voice_gen_models,
             inputs=[],
             outputs=[vg_status],
         )

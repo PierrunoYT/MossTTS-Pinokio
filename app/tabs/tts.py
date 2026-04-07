@@ -10,7 +10,11 @@ import numpy as np
 import torch
 
 from config import MODE_CLONE, MODE_CONTINUE, MODE_CONTINUE_CLONE
-from model_loader import _truncate_reference_audio, download_model_files, load_model
+from model_loader import (
+    _truncate_reference_audio,
+    download_model_files_for_keys,
+    load_model,
+)
 from utils import (
     EXAMPLE_ROWS,
     build_tts_conversation,
@@ -121,10 +125,10 @@ def run_tts_inference(
         return None, error_msg
 
 
-def _download_tts_model(model_variant: str) -> str:
+def _download_tts_model(_model_variant: str) -> str:
+    """Prefetch both tab variants and the shared MOSS-Audio-Tokenizer (codec) repo."""
     try:
-        model_key = "tts_local" if model_variant == "MOSS-TTS-Local (1.7B)" else "tts"
-        return download_model_files(model_key)
+        return download_model_files_for_keys(["tts", "tts_local"])
     except Exception as e:
         return f"❌ Download failed: {e}"
 
