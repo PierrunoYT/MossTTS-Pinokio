@@ -6,13 +6,17 @@ from typing import Optional, Tuple
 import gradio as gr
 import numpy as np
 import torch
+import torchaudio
 
-from model_loader import load_model
+from model_loader import load_realtime_model
 
 
 # ---------------------------------------------------------------------------
 # Inference
 # ---------------------------------------------------------------------------
+
+CODEC_SAMPLE_RATE = 24000
+
 
 def run_realtime_inference(
     text: str,
@@ -20,7 +24,9 @@ def run_realtime_inference(
     temperature: float,
     top_p: float,
     top_k: int,
-    max_new_tokens: int,
+    repetition_penalty: float,
+    repetition_window: int,
+    max_length: int,
     device: str,
     attn_implementation: str,
 ) -> Tuple[Optional[Tuple[int, np.ndarray]], str]:
@@ -28,33 +34,35 @@ def run_realtime_inference(
         if not text or not text.strip():
             return None, "❌ Error: Please enter text to synthesize"
 
-        model, processor, dev, sample_rate = load_model("realtime", device, attn_implementation)
+        inferencer, codec, dev, sample_rate = load_realtime_model(device, attn_implementation)
 
-        msg_kwargs = {"text": text}
-        if reference_audio:
-            msg_kwargs["reference"] = [reference_audio]
+        text_list = [text]
+        ref_list = [reference_audio if reference_audio else ""]
 
-        conversation = [processor.build_user_message(**msg_kwargs)]
-        batch = processor(conversation, mode="generation")
-        input_ids = batch["input_ids"].to(dev)
-        attention_mask = batch["attention_mask"].to(dev)
+        result = inferencer.generate(
+            text=text_list,
+            reference_audio_path=ref_list,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            repetition_penalty=repetition_penalty,
+            repetition_window=repetition_window,
+            device=dev,
+        )
 
-        with torch.no_grad():
-            outputs = model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                max_new_tokens=max_new_tokens,
-                audio_temperature=temperature,
-                audio_top_p=top_p,
-                audio_top_k=top_k,
-            )
+        wav_chunks = []
+        for generated_tokens in result:
+            output = torch.tensor(generated_tokens).to(dev)
+            decode_result = codec.decode(output.permute(1, 0), chunk_duration=8)
+            wav = decode_result["audio"][0].cpu().detach()
+            wav_chunks.append(wav)
 
-        messages = processor.decode(outputs)
-        if messages and len(messages) > 0:
-            audio_np = messages[0].audio_codes_list[0].cpu().numpy()
-            return (sample_rate, audio_np), "✅ Realtime generation completed!"
+        if not wav_chunks:
+            return None, "❌ Error: No audio generated"
 
-        return None, "❌ Error: No audio generated"
+        audio = torch.cat(wav_chunks, dim=-1)
+        audio_np = audio.squeeze().numpy()
+        return (sample_rate, audio_np), "✅ Realtime generation completed!"
 
     except Exception as e:
         error_msg = f"❌ Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
@@ -88,10 +96,12 @@ def build_realtime_tab(args):
                 )
 
                 with gr.Accordion("Advanced Settings", open=False):
-                    rt_temp = gr.Slider(0.1, 3.0, value=1.0, step=0.05, label="Temperature")
-                    rt_top_p = gr.Slider(0.1, 1.0, value=0.9, step=0.01, label="Top P")
-                    rt_top_k = gr.Slider(1, 200, value=50, step=1, label="Top K")
-                    rt_max_tokens = gr.Slider(256, 4096, value=2048, step=128, label="Max New Tokens")
+                    rt_temp = gr.Slider(0.1, 3.0, value=0.8, step=0.05, label="Temperature")
+                    rt_top_p = gr.Slider(0.1, 1.0, value=0.6, step=0.01, label="Top P")
+                    rt_top_k = gr.Slider(1, 200, value=30, step=1, label="Top K")
+                    rt_rep_penalty = gr.Slider(1.0, 2.0, value=1.1, step=0.05, label="Repetition Penalty")
+                    rt_rep_window = gr.Slider(10, 200, value=50, step=5, label="Repetition Window")
+                    rt_max_length = gr.Slider(1000, 10000, value=5000, step=500, label="Max Length")
 
                 rt_generate_btn = gr.Button("⚡ Generate (Realtime)", variant="primary", size="lg")
 
@@ -104,11 +114,12 @@ def build_realtime_tab(args):
                     "- Architecture: MossTTSRealtime (1.7B)\n"
                     "- TTFB: ~180 ms (after warm-up)\n"
                     "- Ideal for voice agents paired with LLMs\n"
-                    "- Supports multi-turn context via reference audio"
+                    "- Supports multi-turn context via KV cache reuse\n"
+                    "- Uses MOSS-Audio-Tokenizer codec"
                 )
 
         rt_generate_btn.click(
             fn=lambda *x: run_realtime_inference(*x, args.device, args.attn_implementation),
-            inputs=[rt_text, rt_reference, rt_temp, rt_top_p, rt_top_k, rt_max_tokens],
+            inputs=[rt_text, rt_reference, rt_temp, rt_top_p, rt_top_k, rt_rep_penalty, rt_rep_window, rt_max_length],
             outputs=[rt_output, rt_status],
         )

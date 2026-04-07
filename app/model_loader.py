@@ -9,7 +9,7 @@ import time
 from typing import Optional
 
 import torch
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoModel, AutoProcessor, AutoTokenizer
 
 from config import CODEC_MODEL_PATH, MAX_REFERENCE_DURATION_SEC, MODELS
 
@@ -141,3 +141,53 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
     sample_rate = int(getattr(processor.model_config, "sampling_rate", 24000))
     print(f"✓ {model_key} loaded")
     return model, processor, device, sample_rate
+
+
+@functools.lru_cache(maxsize=1)
+def load_realtime_model(device_str: str, attn_implementation: str):
+    """Load and LRU-cache the MOSS-TTS-Realtime model + codec + inferencer."""
+    import sys
+    import os
+
+    device = torch.device(device_str if torch.cuda.is_available() else "cpu")
+    dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
+
+    model_path = MODELS["realtime"]
+    codec_path = CODEC_MODEL_PATH
+    print(f"Loading realtime model from {model_path}…")
+
+    local_model_path = _resolve_hf_path(model_path)
+    local_codec_path = _resolve_hf_path(codec_path)
+    resolved_attn = resolve_attn_implementation(attn_implementation, device, dtype)
+
+    # Ensure MOSS-TTS repo paths are importable
+    moss_tts_root = os.path.join(os.path.dirname(__file__), "MOSS-TTS")
+    moss_tts_realtime_dir = os.path.join(moss_tts_root, "moss_tts_realtime")
+    for p in [moss_tts_root, moss_tts_realtime_dir]:
+        if p not in sys.path and os.path.isdir(p):
+            sys.path.insert(0, p)
+
+    from mossttsrealtime.modeling_mossttsrealtime import MossTTSRealtime
+    from inferencer import MossTTSRealtimeInference
+
+    model_kwargs = {"torch_dtype": dtype}
+    if resolved_attn:
+        model_kwargs["attn_implementation"] = resolved_attn
+
+    model = MossTTSRealtime.from_pretrained(local_model_path, **model_kwargs).to(device)
+    model.eval()
+
+    tokenizer = AutoTokenizer.from_pretrained(local_model_path)
+
+    codec = AutoModel.from_pretrained(local_codec_path, trust_remote_code=True).eval().to(device)
+
+    inferencer = MossTTSRealtimeInference(
+        model, tokenizer,
+        max_length=5000,
+        codec=codec,
+        codec_sample_rate=24000,
+        codec_encode_kwargs={"chunk_duration": 8},
+    )
+
+    print("✓ realtime model loaded")
+    return inferencer, codec, device, 24000

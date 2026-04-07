@@ -37,6 +37,24 @@ module.exports = {
         }
       }
     },
+    // Clone MOSS-TTS repo (needed for mossttsrealtime package)
+    {
+      method: "shell.run",
+      params: {
+        message: "git clone https://github.com/OpenMOSS/MOSS-TTS.git app/MOSS-TTS || true"
+      }
+    },
+    // Install mossttsrealtime package from MOSS-TTS repo
+    {
+      method: "shell.run",
+      params: {
+        venv: "env",
+        path: "app/MOSS-TTS",
+        message: [
+          "pip install --no-deps -e ."
+        ],
+      }
+    },
     {
       method: "notify",
       params: {
