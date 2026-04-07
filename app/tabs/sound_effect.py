@@ -33,7 +33,7 @@ def run_sound_effect_inference(
         model, processor, dev, sample_rate = load_model("sound_effect", device, attn_implementation)
 
         expected_tokens = max(1, int(duration_seconds * TOKENS_PER_SECOND))
-        conversation = [processor.build_user_message(text=description, tokens=expected_tokens)]
+        conversation = [processor.build_user_message(ambient_sound=description, tokens=expected_tokens)]
         batch = processor(conversation, mode="generation")
         input_ids = batch["input_ids"].to(dev)
         attention_mask = batch["attention_mask"].to(dev)
@@ -86,9 +86,9 @@ def build_sound_effect_tab(args):
 
                 with gr.Accordion("Advanced Settings", open=False):
                     se_temp = gr.Slider(0.1, 3.0, value=1.5, step=0.05, label="Temperature")
-                    se_top_p = gr.Slider(0.1, 1.0, value=0.8, step=0.01, label="Top P")
-                    se_top_k = gr.Slider(1, 200, value=25, step=1, label="Top K")
-                    se_rep_penalty = gr.Slider(0.8, 2.0, value=1.0, step=0.05, label="Repetition Penalty")
+                    se_top_p = gr.Slider(0.1, 1.0, value=0.6, step=0.01, label="Top P")
+                    se_top_k = gr.Slider(1, 200, value=50, step=1, label="Top K")
+                    se_rep_penalty = gr.Slider(0.8, 2.0, value=1.2, step=0.05, label="Repetition Penalty")
                     se_max_tokens = gr.Slider(256, 8192, value=4096, step=128, label="Max New Tokens")
 
                 se_generate_btn = gr.Button("🎵 Generate Sound", variant="primary", size="lg")
