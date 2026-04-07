@@ -6,7 +6,6 @@ from typing import Optional, Tuple
 import gradio as gr
 import numpy as np
 import torch
-import torchaudio
 
 from model_loader import load_realtime_model
 

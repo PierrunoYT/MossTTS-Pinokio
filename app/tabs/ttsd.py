@@ -98,7 +98,7 @@ PRESET_TABLE_ROWS, PRESET_TABLE_ROW_TO_PRESET = _build_preset_table_rows()
 
 def normalize_text(text: str) -> str:
     text = re.sub(r"\[(\d+)\]", r"[S\1]", text)
-    remove_chars = "【】《》（）『』「」" '"-_""～~'''"
+    remove_chars = '【】《》（）『』「」\u201c\u201d\u2018\u2019"-_\u201c\u201d\uff5e~\u2018\u2019\u2018'
 
     segments = re.split(r"(?=\[S\d+\])", text.replace("\n", " "))
     processed_parts = []
