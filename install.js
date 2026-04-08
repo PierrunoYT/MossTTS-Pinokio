@@ -18,9 +18,9 @@ module.exports = {
       method: "shell.run",
       params: {
         venv: "env",
-        path: "app",
+        path: ".",
         message: [
-          "uv pip install -r requirements.txt"
+          "uv pip install -r app/requirements.txt"
         ],
       }
     },
@@ -31,7 +31,7 @@ module.exports = {
         uri: "torch.js",
         params: {
           venv: "env",
-          path: "app",
+          path: ".",
           flashattention: true,
           triton: true
         }
@@ -49,9 +49,9 @@ module.exports = {
       method: "shell.run",
       params: {
         venv: "env",
-        path: "app/MOSS-TTS",
+        path: ".",
         message: [
-          "pip install --no-deps -e ."
+          "pip install --no-deps -e app/MOSS-TTS"
         ],
       }
     },

@@ -4,7 +4,7 @@ module.exports = {
   description: "All-in-one Gradio UI for the MOSS-TTS Family: voice cloning, dialogue generation, voice design from text, and sound effects.",
   icon: "icon.jpg",
   menu: async (kernel, info) => {
-    let installed = info.exists("app/env")
+    let installed = info.exists("env")
     let running = {
       install: info.running("install.js"),
       start: info.running("start.js"),
