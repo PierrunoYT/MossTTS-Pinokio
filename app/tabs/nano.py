@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 import tempfile
 import traceback
 from pathlib import Path
@@ -42,7 +43,7 @@ def run_nano_inference(
         with tempfile.TemporaryDirectory(prefix="moss_nano_") as tmpdir:
             out_wav = Path(tmpdir) / "nano_output.wav"
             cmd = [
-                "python",
+                sys.executable,
                 "infer_onnx.py",
                 "--text",
                 text.strip(),
