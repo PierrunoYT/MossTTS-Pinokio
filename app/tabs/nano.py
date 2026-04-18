@@ -36,6 +36,28 @@ EXAMPLE_TEXTS = {
     "Japanese": "本日はNHKニュースをご覧いただきありがとうございます。最新のニュースをお伝えします。",
 }
 
+SUPPORTED_LANGUAGES = [
+    "Chinese",
+    "English",
+    "German",
+    "Spanish",
+    "French",
+    "Japanese",
+    "Italian",
+    "Hungarian",
+    "Korean",
+    "Russian",
+    "Persian (Farsi)",
+    "Arabic",
+    "Polish",
+    "Portuguese",
+    "Czech",
+    "Danish",
+    "Swedish",
+    "Greek",
+    "Turkish",
+]
+
 SAMPLE_AUDIO = {
     "English": str(NANO_DIR / "assets" / "audio" / "en_2.wav"),
     "Chinese": str(NANO_DIR / "assets" / "audio" / "zh_1.wav"),
@@ -63,7 +85,27 @@ def _normalize_with_wetext_fallback(text: str, lang: str) -> Tuple[str, str]:
     raw = (text or "").strip()
     if not raw:
         return raw, "none"
-    lang_code = {"English": "en", "Chinese": "zh", "Japanese": "ja"}.get(lang, "zh")
+    lang_code = {
+        "Chinese": "zh",
+        "English": "en",
+        "German": "de",
+        "Spanish": "es",
+        "French": "fr",
+        "Japanese": "ja",
+        "Italian": "it",
+        "Hungarian": "hu",
+        "Korean": "ko",
+        "Russian": "ru",
+        "Persian (Farsi)": "fa",
+        "Arabic": "ar",
+        "Polish": "pl",
+        "Portuguese": "pt",
+        "Czech": "cs",
+        "Danish": "da",
+        "Swedish": "sv",
+        "Greek": "el",
+        "Turkish": "tr",
+    }.get(lang, "en")
     if Normalizer is not None:
         try:
             normalizer = Normalizer(lang=lang_code, operator="tn")
@@ -130,7 +172,8 @@ def _safe_ref_path(example_lang: str, uploaded: Optional[str]) -> Optional[str]:
 
 
 def on_example_select(lang: str) -> Tuple[str, Optional[str]]:
-    return EXAMPLE_TEXTS.get(lang, ""), _safe_ref_path(lang, None)
+    fallback = "Please enter text in the selected language."
+    return EXAMPLE_TEXTS.get(lang, fallback), _safe_ref_path(lang, None)
 
 
 def run_nano_inference(
@@ -273,10 +316,10 @@ def build_nano_tab(args):
         with gr.Row(equal_height=False):
             with gr.Column(scale=3):
                 nano_lang = gr.Dropdown(
-                    choices=list(EXAMPLE_TEXTS.keys()),
+                    choices=SUPPORTED_LANGUAGES,
                     value="English",
                     label="Example language",
-                    info="Pre-fills text and sample reference audio.",
+                    info="Shows all officially supported Nano languages. Sample audio autofill is available for a subset.",
                 )
                 nano_text = gr.Textbox(
                     label="Text to synthesize",
