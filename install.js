@@ -44,6 +44,13 @@ module.exports = {
         message: "git clone https://github.com/OpenMOSS/MOSS-TTS.git app/MOSS-TTS || true"
       }
     },
+    // Clone MOSS-TTS-Nano repo for ONNX CPU tab
+    {
+      method: "shell.run",
+      params: {
+        message: "git clone https://github.com/OpenMOSS/MOSS-TTS-Nano.git app/MOSS-TTS-Nano || true"
+      }
+    },
     // Install mossttsrealtime package from MOSS-TTS repo
     {
       method: "shell.run",
@@ -52,6 +59,17 @@ module.exports = {
         path: ".",
         message: [
           "pip install --no-deps -e app/MOSS-TTS"
+        ],
+      }
+    },
+    // Install Nano ONNX dependencies without overriding core stack
+    {
+      method: "shell.run",
+      params: {
+        venv: "env",
+        path: ".",
+        message: [
+          "uv pip install onnxruntime sentencepiece python-multipart"
         ],
       }
     },

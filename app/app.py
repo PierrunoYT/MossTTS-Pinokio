@@ -28,6 +28,7 @@ from tabs.ttsd import build_ttsd_tab
 from tabs.voice_gen import build_voice_gen_tab
 from tabs.sound_effect import build_sound_effect_tab
 from tabs.realtime import build_realtime_tab
+from tabs.nano import build_nano_tab
 from tabs.info import build_info_tab
 
 
@@ -69,6 +70,8 @@ def build_unified_interface(args):
                 build_sound_effect_tab(args)
             with gr.Tab("⚡ Realtime TTS"):
                 build_realtime_tab(args)
+            with gr.Tab("🧩 Nano (ONNX CPU)"):
+                build_nano_tab(args)
             with gr.Tab("ℹ️ About"):
                 build_info_tab()
 

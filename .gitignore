@@ -1,0 +1,5 @@
+env/
+app/MOSS-TTS/
+app/MOSS-TTS-Nano/
+app/models/
+app/generated_audio/
