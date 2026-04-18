@@ -17,7 +17,7 @@ module.exports = {
         path: ".",
         message: [
           "uv pip install -r app/requirements.txt",
-          "uv pip install onnxruntime sentencepiece python-multipart"
+          "uv pip install onnxruntime sentencepiece python-multipart wetext"
         ]
       }
     },

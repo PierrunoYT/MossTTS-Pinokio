@@ -69,7 +69,7 @@ module.exports = {
         venv: "env",
         path: ".",
         message: [
-          "uv pip install onnxruntime sentencepiece python-multipart"
+          "uv pip install onnxruntime sentencepiece python-multipart wetext"
         ],
       }
     },
