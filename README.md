@@ -5,7 +5,7 @@ A unified web interface combining all MOSS-TTS models into a single application 
 ## Features
 
 **Voice Synthesis Models**
-- **MOSS-TTS** - High-fidelity voice cloning with zero-shot capability
+- **MOSS-TTS-v1.5** - High-fidelity voice cloning (31 languages, pause markers, improved cloning)
 - **MOSS-TTSD** - Multi-speaker dialogue generation
 - **MOSS-VoiceGenerator** - Design voices from text descriptions
 - **MOSS-SoundEffect** - Generate environmental sounds and effects
@@ -55,12 +55,13 @@ This application is packaged for [Pinokio](https://pinokio.com/) for one-click i
 
 ### Voice Cloning (TTS)
 
-Generate speech with optional voice cloning from reference audio.
+Generate speech with optional voice cloning from reference audio (default: **MOSS-TTS-v1.5**).
 
-1. Enter your text
-2. Optionally upload reference audio (3-30 seconds recommended)
-3. Adjust generation settings if needed
-4. Click "Generate Speech"
+1. Enter your text (use `[pause 3.2s]` in text for explicit pauses on v1.5)
+2. For non Chinese/English, pick a **Language tag** when using the 8B model
+3. Optionally upload reference audio (3-30 seconds recommended)
+4. Adjust generation settings if needed
+5. Click "Generate Speech"
 
 **Without reference audio:** Uses default voice  
 **With reference audio:** Clones the voice characteristics
@@ -115,7 +116,7 @@ Generate environmental sounds and audio effects from descriptions.
 
 | Model | VRAM Required |
 |-------|---------------|
-| MOSS-TTS | ~10GB |
+| MOSS-TTS-v1.5 | ~10GB |
 | MOSS-TTSD | ~10GB |
 | MOSS-VoiceGenerator | ~8GB |
 | MOSS-SoundEffect | ~10GB |

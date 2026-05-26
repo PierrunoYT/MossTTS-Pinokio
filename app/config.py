@@ -14,7 +14,7 @@ torch.backends.cuda.enable_math_sdp(True)
 # ---------------------------------------------------------------------------
 
 MODELS = {
-    "tts": "OpenMOSS-Team/MOSS-TTS",
+    "tts": "OpenMOSS-Team/MOSS-TTS-v1.5",
     "tts_local": "OpenMOSS-Team/MOSS-TTS-Local-Transformer",
     "ttsd": "OpenMOSS-Team/MOSS-TTSD-v1.0",
     "voice_gen": "OpenMOSS-Team/MOSS-VoiceGenerator",
@@ -45,6 +45,54 @@ CONTINUATION_NOTICE = (
 MODE_CLONE = "Clone"
 MODE_CONTINUE = "Continuation"
 MODE_CONTINUE_CLONE = "Continuation + Clone"
+
+# TTS tab model variant labels (must match Gradio Radio choices)
+TTS_VARIANT_V15 = "MOSS-TTS-v1.5 (8B)"
+TTS_VARIANT_LOCAL = "MOSS-TTS-Local (1.7B)"
+
+# MOSS-TTS-v1.5 language tags (English names as expected by build_user_message)
+TTS_LANGUAGE_AUTO = "Auto (no tag)"
+TTS_LANGUAGE_CHOICES = [
+    TTS_LANGUAGE_AUTO,
+    "Chinese",
+    "Cantonese",
+    "English",
+    "Arabic",
+    "Czech",
+    "Danish",
+    "Dutch",
+    "Finnish",
+    "French",
+    "German",
+    "Greek",
+    "Hebrew",
+    "Hindi",
+    "Hungarian",
+    "Italian",
+    "Japanese",
+    "Korean",
+    "Macedonian",
+    "Malay",
+    "Persian (Farsi)",
+    "Polish",
+    "Portuguese",
+    "Romanian",
+    "Russian",
+    "Spanish",
+    "Swahili",
+    "Swedish",
+    "Tagalog",
+    "Thai",
+    "Turkish",
+    "Vietnamese",
+]
+
+
+def resolve_tts_language(choice: str):
+    """Map UI language choice to processor language tag, or None to omit."""
+    if not choice or choice == TTS_LANGUAGE_AUTO:
+        return None
+    return choice
 
 # ---------------------------------------------------------------------------
 # Duration estimation (tokens per character, by language)

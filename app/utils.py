@@ -110,6 +110,18 @@ def update_duration_controls(enabled: bool, text: str, current_tokens, mode_with
 # TTS mode hint & conversation builder
 # ---------------------------------------------------------------------------
 
+def format_pause_marker(duration: float) -> str:
+    """Build a MOSS-TTS-v1.5 inline pause marker."""
+    seconds = max(0.1, min(30.0, float(duration)))
+    return f"[pause {seconds:.1f}s]"
+
+
+def insert_pause_marker(text: str, duration: float) -> str:
+    """Append a pause marker to the synthesis text (server-side fallback)."""
+    marker = format_pause_marker(duration)
+    return (text or "") + marker
+
+
 def render_mode_hint(reference_audio: Optional[str], mode_with_reference: str) -> str:
     if not reference_audio:
         return "Current mode: **Direct Generation** (no reference audio uploaded)"
@@ -124,12 +136,15 @@ def build_tts_conversation(
     mode_with_reference: str,
     expected_tokens: Optional[int],
     processor,
+    language: Optional[str] = None,
 ):
     """Build the processor conversation list for any TTS mode.
 
     Returns (conversations, mode_str, mode_name).
     """
     user_kwargs = {"text": text}
+    if language:
+        user_kwargs["language"] = language
     if expected_tokens is not None:
         user_kwargs["tokens"] = int(expected_tokens)
 

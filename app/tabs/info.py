@@ -12,10 +12,10 @@ Welcome to the all-in-one interface for the MOSS-TTS Family of models!
 
 ## 📚 Available Models
 
-### 🎙️ MOSS-TTS
-High-fidelity text-to-speech with zero-shot voice cloning. Upload a reference audio to clone any
-voice! Choose between **MOSS-TTS (8B)** for best long-form stability and
-**MOSS-TTS-Local (1.7B)** for the highest speaker similarity score with lower VRAM usage.
+### 🎙️ MOSS-TTS-v1.5
+High-fidelity text-to-speech with zero-shot voice cloning. Default checkpoint is **MOSS-TTS-v1.5 (8B)**:
+31 languages with optional language tags, stabler cloning, and inline pauses (`[pause 3.2s]`).
+Or use **MOSS-TTS-Local (1.7B)** for the highest speaker similarity score with lower VRAM.
 Supports **Clone**, **Continuation**, and **Continuation + Clone** modes.
 
 ### 💬 MOSS-TTSD
@@ -42,6 +42,8 @@ Achieves ~180 ms TTFB after warm-up (1.7B model).
 
 - Adjust **Temperature** for creativity vs. stability (higher = more expressive)
 - Use **reference audio** in MOSS-TTS for voice cloning
+- For non Chinese/English text on **v1.5**, set the **Language tag** dropdown when the language is known
+- Insert pauses in v1.5 with **Insert [pause …]** (cursor) or markers like `[pause 3.2s]` in your text
 - In **Continuation** modes, prepend the reference audio transcript to your input text
 - Be descriptive in voice/sound descriptions for better results
 - Generation time depends on text length and your hardware

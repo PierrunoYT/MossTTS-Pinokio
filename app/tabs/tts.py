@@ -9,7 +9,16 @@ import gradio as gr
 import numpy as np
 import torch
 
-from config import MODE_CLONE, MODE_CONTINUE, MODE_CONTINUE_CLONE
+from config import (
+    MODE_CLONE,
+    MODE_CONTINUE,
+    MODE_CONTINUE_CLONE,
+    TTS_LANGUAGE_AUTO,
+    TTS_LANGUAGE_CHOICES,
+    TTS_VARIANT_LOCAL,
+    TTS_VARIANT_V15,
+    resolve_tts_language,
+)
 from model_loader import (
     _truncate_reference_audio,
     download_model_files_for_keys,
@@ -23,6 +32,31 @@ from utils import (
     update_duration_controls,
 )
 
+# Insert [pause X.Ys] at the text cursor when possible; otherwise append (Gradio 6).
+_INSERT_PAUSE_JS = """
+(text, duration) => {
+    const marker = `[pause ${Math.max(0.1, Math.min(30, Number(duration))).toFixed(1)}s]`;
+    const root = document.getElementById("moss_tts_text");
+    const el = root
+        ? root.querySelector("textarea, input[type=text]")
+        : document.querySelector("#moss_tts_text textarea");
+    if (!el) {
+        return (text || "") + marker;
+    }
+    const value = text ?? el.value ?? "";
+    const start = typeof el.selectionStart === "number" ? el.selectionStart : value.length;
+    const end = typeof el.selectionEnd === "number" ? el.selectionEnd : start;
+    const updated = value.slice(0, start) + marker + value.slice(end);
+    try {
+        el.value = updated;
+        const pos = start + marker.length;
+        el.setSelectionRange(pos, pos);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch (e) {}
+    return updated;
+}
+"""
+
 
 # ---------------------------------------------------------------------------
 # Inference
@@ -35,6 +69,7 @@ def run_tts_inference(
     duration_control_enabled: bool,
     duration_tokens: int,
     model_variant: str,
+    language_choice: str,
     temperature: float,
     top_p: float,
     top_k: int,
@@ -49,8 +84,12 @@ def run_tts_inference(
         if not text or not text.strip():
             return None, "❌ Error: Please enter text to synthesize"
 
-        model_key = "tts_local" if model_variant == "MOSS-TTS-Local (1.7B)" else "tts"
+        model_key = "tts_local" if model_variant == TTS_VARIANT_LOCAL else "tts"
         model, processor, dev, sample_rate = load_model(model_key, device, attn_implementation)
+
+        language_tag = None
+        if model_key == "tts":
+            language_tag = resolve_tts_language(language_choice)
 
         resolved_ref = None
         if reference_audio:
@@ -68,6 +107,7 @@ def run_tts_inference(
             mode_with_reference=mode_with_reference,
             expected_tokens=expected_tokens,
             processor=processor,
+            language=language_tag,
         )
 
         batch = processor(conversations, mode=mode)
@@ -108,8 +148,10 @@ def run_tts_inference(
                 pass
 
         elapsed = time.monotonic() - started_at
+        lang_note = language_tag if language_tag else "auto"
         status = (
             f"✅ Done | mode: {mode_name} | elapsed: {elapsed:.2f}s | "
+            f"language={lang_note} | "
             f"max_new_tokens={max_new_tokens}, "
             f"expected_tokens={expected_tokens if expected_tokens is not None else 'off'}, "
             f"temperature={temperature:.2f}, top_p={top_p:.2f}, top_k={top_k}"
@@ -141,25 +183,55 @@ def _download_tts_model(_model_variant: str) -> str:
 
 def build_tts_tab(args):
     with gr.Column():
-        gr.Markdown("### 🎙️ MOSS-TTS - High-Quality Voice Cloning")
+        gr.Markdown("### 🎙️ MOSS-TTS-v1.5 - High-Quality Voice Cloning")
         gr.Markdown(
             "Generate speech with or without reference audio. "
-            "Supports voice cloning and continuation modes."
+            "v1.5 adds 31-language tags, stabler cloning, and inline pauses like `[pause 3.2s]`."
         )
 
         tts_model_variant = gr.Radio(
-            choices=["MOSS-TTS (8B)", "MOSS-TTS-Local (1.7B)"],
-            value="MOSS-TTS (8B)",
+            choices=[TTS_VARIANT_V15, TTS_VARIANT_LOCAL],
+            value=TTS_VARIANT_V15,
             label="Model Variant",
-            info="8B: best zero-shot cloning & long-form stability. 1.7B Local: highest speaker similarity score, lighter VRAM.",
+            info="v1.5 (8B): multilingual tags, pauses, long-form stability. Local (1.7B): highest SIM, lighter VRAM.",
         )
 
         with gr.Row():
             with gr.Column(scale=3):
+                tts_language = gr.Dropdown(
+                    choices=TTS_LANGUAGE_CHOICES,
+                    value=TTS_LANGUAGE_AUTO,
+                    label="Language tag (v1.5 only)",
+                    info="Set when the text language is known (recommended for non Chinese/English).",
+                    allow_custom_value=False,
+                )
                 tts_text = gr.Textbox(
                     label="Text to Synthesize",
                     lines=8,
-                    placeholder="Enter text here. In Continuation modes, prepend the reference audio transcript.",
+                    elem_id="moss_tts_text",
+                    placeholder=(
+                        "Enter text here. Use [pause 3.2s] for explicit pauses (v1.5). "
+                        "In Continuation modes, prepend the reference audio transcript."
+                    ),
+                )
+                with gr.Row():
+                    tts_pause_duration = gr.Slider(
+                        minimum=0.1,
+                        maximum=30.0,
+                        value=3.2,
+                        step=0.1,
+                        label="Pause duration (seconds)",
+                        scale=3,
+                    )
+                    tts_insert_pause_btn = gr.Button(
+                        "Insert [pause …]",
+                        scale=1,
+                        size="sm",
+                        variant="secondary",
+                    )
+                gr.Markdown(
+                    "Click **Insert [pause …]** to add a marker at the cursor "
+                    "(or at the end if the text box is not focused). v1.5 only."
                 )
                 tts_reference = gr.Audio(
                     label="Reference Audio (Optional)",
@@ -210,6 +282,24 @@ def build_tts_tab(args):
                         label="Examples — click a row to fill inputs",
                     )
 
+        def _language_control_visibility(variant: str):
+            if variant == TTS_VARIANT_V15:
+                return gr.update(interactive=True)
+            return gr.update(interactive=False, value=TTS_LANGUAGE_AUTO)
+
+        tts_model_variant.change(
+            fn=_language_control_visibility,
+            inputs=[tts_model_variant],
+            outputs=[tts_language],
+        )
+
+        tts_insert_pause_btn.click(
+            fn=None,
+            inputs=[tts_text, tts_pause_duration],
+            outputs=tts_text,
+            js=_INSERT_PAUSE_JS,
+        )
+
         # Mode hint reactivity
         for trigger in [tts_reference, tts_mode]:
             trigger.change(
@@ -230,12 +320,12 @@ def build_tts_tab(args):
         if EXAMPLE_ROWS:
             def _apply_example(mode, dur_enabled, dur_tokens, evt: gr.SelectData):
                 if evt is None or evt.index is None:
-                    return [gr.update()] * 6
+                    return [gr.update()] * 7
                 row_idx = (
                     int(evt.index[0]) if isinstance(evt.index, (tuple, list)) else int(evt.index)
                 )
                 if row_idx < 0 or row_idx >= len(EXAMPLE_ROWS):
-                    return [gr.update()] * 6
+                    return [gr.update()] * 7
                 _, audio_path, example_text = EXAMPLE_ROWS[row_idx]
                 dur_slider, dur_hint, dur_checkbox = update_duration_controls(
                     dur_enabled, example_text, dur_tokens, mode
@@ -243,6 +333,7 @@ def build_tts_tab(args):
                 return (
                     audio_path,
                     example_text,
+                    TTS_LANGUAGE_AUTO,
                     render_mode_hint(audio_path, mode),
                     dur_slider,
                     dur_hint,
@@ -253,7 +344,7 @@ def build_tts_tab(args):
                 fn=_apply_example,
                 inputs=[tts_mode, tts_duration_enabled, tts_duration_tokens],
                 outputs=[
-                    tts_reference, tts_text, tts_mode_hint,
+                    tts_reference, tts_text, tts_language, tts_mode_hint,
                     tts_duration_tokens, tts_duration_hint, tts_duration_enabled,
                 ],
             )
@@ -263,7 +354,7 @@ def build_tts_tab(args):
             inputs=[
                 tts_text, tts_reference, tts_mode,
                 tts_duration_enabled, tts_duration_tokens,
-                tts_model_variant,
+                tts_model_variant, tts_language,
                 tts_temp, tts_top_p, tts_top_k, tts_rep_penalty, tts_max_tokens,
             ],
             outputs=[tts_output, tts_status],
