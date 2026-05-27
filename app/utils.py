@@ -71,7 +71,8 @@ def estimate_duration_tokens(text: str) -> Tuple[str, int, int, int]:
     factor = ZH_TOKENS_PER_CHAR if language == "zh" else EN_TOKENS_PER_CHAR
     default_tokens = max(1, int(effective_len * factor))
     min_tokens = max(1, int(default_tokens * 0.5))
-    max_tokens = max(min_tokens, int(default_tokens * 1.5))
+    # Gradio 6 requires minimum < maximum on Slider.
+    max_tokens = max(min_tokens + 1, int(default_tokens * 1.5))
     return language, default_tokens, min_tokens, max_tokens
 
 

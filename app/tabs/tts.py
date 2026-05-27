@@ -249,8 +249,14 @@ def build_tts_tab(args):
                     value=False,
                     label="Enable Duration Control (Expected Audio Tokens)",
                 )
+                _dur_default, _dur_min, _dur_max = estimate_duration_tokens("")[
+                    1:
+                ]
                 tts_duration_tokens = gr.Slider(
-                    minimum=1, maximum=1, step=1, value=1,
+                    minimum=_dur_min,
+                    maximum=_dur_max,
+                    step=1,
+                    value=_dur_default,
                     label="expected_tokens",
                     visible=False,
                 )
