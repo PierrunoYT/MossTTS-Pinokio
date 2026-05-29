@@ -240,8 +240,12 @@ def load_realtime_model(device_str: str, attn_implementation: str):
 
     tokenizer = AutoTokenizer.from_pretrained(local_model_path)
 
+    # Load the codec in float32 regardless of dtype: the codec model has internal
+    # operations that explicitly cast tensors to .float() for numerical stability,
+    # and those tensors are then passed back into conv/linear layers — causing
+    # dtype mismatches if the layer weights are bf16.
     codec = AutoModel.from_pretrained(
-        local_codec_path, trust_remote_code=True, torch_dtype=dtype
+        local_codec_path, trust_remote_code=True, torch_dtype=torch.float32
     ).eval().to(device)
 
     inferencer = MossTTSRealtimeInference(
