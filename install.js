@@ -39,16 +39,18 @@ module.exports = {
     },
     // Clone MOSS-TTS repo (needed for mossttsrealtime package)
     {
+      when: "{{!exists('app/MOSS-TTS')}}",
       method: "shell.run",
       params: {
-        message: "git clone https://github.com/OpenMOSS/MOSS-TTS.git app/MOSS-TTS || true"
+        message: "git clone https://github.com/OpenMOSS/MOSS-TTS.git app/MOSS-TTS"
       }
     },
     // Clone MOSS-TTS-Nano repo for ONNX CPU tab
     {
+      when: "{{!exists('app/MOSS-TTS-Nano')}}",
       method: "shell.run",
       params: {
-        message: "git clone https://github.com/OpenMOSS/MOSS-TTS-Nano.git app/MOSS-TTS-Nano || true"
+        message: "git clone https://github.com/OpenMOSS/MOSS-TTS-Nano.git app/MOSS-TTS-Nano"
       }
     },
     // Install mossttsrealtime package from MOSS-TTS repo
@@ -58,7 +60,7 @@ module.exports = {
         venv: "env",
         path: ".",
         message: [
-          "pip install --no-deps -e app/MOSS-TTS"
+          "uv pip install --no-deps -e app/MOSS-TTS"
         ],
       }
     },
