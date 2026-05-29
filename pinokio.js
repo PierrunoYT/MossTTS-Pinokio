@@ -1,8 +1,5 @@
 module.exports = {
   version: "5.0",
-  title: "MOSS-TTS",
-  description: "All-in-one Gradio UI for the MOSS-TTS Family: voice cloning, dialogue generation, voice design from text, and sound effects.",
-  icon: "icon.jpg",
   menu: async (kernel, info) => {
     let installed = info.exists("env")
     let running = {
@@ -69,7 +66,7 @@ module.exports = {
           text: "Start",
           href: "start.js",
         }, {
-          icon: "fa-solid fa-plug",
+          icon: "fa-solid fa-arrows-rotate",
           text: "Update",
           href: "update.js",
         }, {
