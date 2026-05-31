@@ -1,7 +1,7 @@
 # MOSS-TTS - torch/torchaudio/torchcodec installed by torch.js
 
 # Transformers & Model Loading
-transformers==4.57.1
+transformers>=5.0.0
 safetensors==0.6.2
 huggingface_hub
 hf-transfer>=0.1.4

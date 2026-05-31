@@ -22,6 +22,28 @@ import gradio as gr
 import torch
 
 # ---------------------------------------------------------------------------
+# Transformers compat: MOSS remote code (trust_remote_code=True) references
+# `MODALITY_TO_AE_CLASS_MAPPING`, which was introduced in transformers 5.
+# If an older 4.x install is still present, alias it from the equivalent
+# `AUTO_TO_BASE_CLASS_MAPPING` so the remote code doesn't crash on import.
+# This shim is a no-op on transformers ≥ 5 where the attribute already exists.
+# ---------------------------------------------------------------------------
+try:
+    import transformers as _tf
+
+    if not hasattr(_tf, "MODALITY_TO_AE_CLASS_MAPPING"):
+        _mapping = getattr(_tf, "AUTO_TO_BASE_CLASS_MAPPING", None)
+        if _mapping is not None:
+            _tf.MODALITY_TO_AE_CLASS_MAPPING = _mapping
+            # Also expose it inside the auto sub-module used by remote code
+            import transformers.models.auto as _auto  # noqa: PLC0415
+
+            if not hasattr(_auto, "MODALITY_TO_AE_CLASS_MAPPING"):
+                _auto.MODALITY_TO_AE_CLASS_MAPPING = _mapping
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
 # Windows: suppress the harmless "WinError 10054 - An existing connection was
 # forcibly closed by the remote host" noise that asyncio's ProactorEventLoop
 # raises whenever a browser tab closes mid-stream.  The error is benign but
