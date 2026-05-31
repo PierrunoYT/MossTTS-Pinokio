@@ -176,6 +176,29 @@ def on_example_select(lang: str) -> Tuple[str, Optional[str]]:
     return EXAMPLE_TEXTS.get(lang, fallback), _safe_ref_path(lang, None)
 
 
+_MIN_REFERENCE_SECONDS = 0.5  # ONNX conv kernels need at least ~0.5 s of audio
+
+
+def _check_audio_duration(path: str) -> Optional[str]:
+    """Return an error string if the audio file is too short, otherwise None."""
+    try:
+        import wave
+
+        with wave.open(path, "rb") as wf:
+            frames = wf.getnframes()
+            rate = wf.getframerate()
+            duration = frames / rate if rate > 0 else 0.0
+        if duration < _MIN_REFERENCE_SECONDS:
+            return (
+                f"❌ Reference audio is too short ({duration:.2f}s). "
+                f"Please provide at least {_MIN_REFERENCE_SECONDS}s of audio."
+            )
+        return None
+    except Exception:
+        # Non-WAV or unreadable — let the model surface its own error.
+        return None
+
+
 def run_nano_inference(
     text: str,
     reference_audio: Optional[str],
@@ -193,6 +216,10 @@ def run_nano_inference(
         ref_audio = _safe_ref_path(example_lang, reference_audio)
         if not ref_audio:
             return None, "❌ Please upload reference audio (or pick a language sample)."
+
+        duration_error = _check_audio_duration(ref_audio)
+        if duration_error:
+            return None, duration_error
 
         normalizer_method = "none"
         normalized_text = text

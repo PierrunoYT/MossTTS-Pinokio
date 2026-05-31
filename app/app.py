@@ -13,12 +13,35 @@ Usage:
 """
 
 import argparse
+import asyncio
 import os
 import sys
 import time
 
 import gradio as gr
 import torch
+
+# ---------------------------------------------------------------------------
+# Windows: suppress the harmless "WinError 10054 - An existing connection was
+# forcibly closed by the remote host" noise that asyncio's ProactorEventLoop
+# raises whenever a browser tab closes mid-stream.  The error is benign but
+# it pollutes logs and can cause unhandled-exception warnings on Python 3.9+.
+# ---------------------------------------------------------------------------
+if sys.platform == "win32":
+    try:
+        from asyncio import proactor_events as _pe
+
+        _orig_call_connection_lost = _pe._ProactorBasePipeTransport._call_connection_lost  # type: ignore[attr-defined]
+
+        def _quiet_call_connection_lost(self, exc):  # type: ignore[override]
+            try:
+                _orig_call_connection_lost(self, exc)
+            except OSError:
+                pass
+
+        _pe._ProactorBasePipeTransport._call_connection_lost = _quiet_call_connection_lost  # type: ignore[attr-defined]
+    except Exception:
+        pass
 
 from config import MODELS, PRELOAD_ENV_VAR
 from model_loader import load_model, resolve_attn_implementation
