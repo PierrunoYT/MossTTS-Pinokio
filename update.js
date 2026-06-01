@@ -17,7 +17,8 @@ module.exports = {
         path: ".",
         message: [
           "uv pip install -r app/requirements.txt",
-          "uv pip install onnxruntime sentencepiece python-multipart wetext"
+          "uv pip install onnxruntime sentencepiece python-multipart wetext",
+          "uv pip install --no-deps -e app/MOSS-TTS"
         ]
       }
     },

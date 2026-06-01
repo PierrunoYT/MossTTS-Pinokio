@@ -25,7 +25,6 @@ MODEL_ID = "OpenMOSS-Team/MOSS-TTS-Nano-100M"
 AUDIO_TOKENIZER_ID = "OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano"
 NANO_DIR = Path(__file__).resolve().parents[1] / "MOSS-TTS-Nano"
 OUTPUT_DIR = NANO_DIR / "generated_audio"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 EXAMPLE_TEXTS = {
     "English": (
@@ -239,6 +238,7 @@ def run_nano_inference(
                 if torch.cuda.is_available():
                     torch.cuda.manual_seed(seed_int)
 
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             out_path = OUTPUT_DIR / f"nano_{os.getpid()}_{abs(hash(normalized_text)) % 1000000}.wav"
             result = tts_model.inference(
                 text=normalized_text,
@@ -325,6 +325,7 @@ def _run_nano_onnx_fallback(
         if not out_wav.exists():
             return None, "❌ Nano ONNX fallback finished but produced no output file."
 
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         final_out = OUTPUT_DIR / f"nano_onnx_{os.getpid()}_{abs(hash(text)) % 1000000}.wav"
         out_wav.replace(final_out)
         status = "✅ Nano generation completed via ONNX fallback."
