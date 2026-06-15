@@ -1,17 +1,25 @@
 """Model loading, caching, and audio pre-processing utilities."""
 
-import functools
+import gc
 import importlib.util
 import os
 import sys
 import tempfile
 import time
+from collections import OrderedDict
 from typing import Optional
 
 import torch
 from transformers import AutoModel, AutoProcessor, AutoTokenizer
 
-from config import CODEC_MODEL_PATH, MAX_REFERENCE_DURATION_SEC, MODELS
+from config import (
+    CODEC_MODEL_PATH,
+    DEFAULT_MODEL_CACHE_SIZE,
+    MAX_REFERENCE_DURATION_SEC,
+    MODEL_CACHE_SIZE_ENV_VAR,
+    MODELS,
+    QUANTIZATION_ENV_VAR,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +114,123 @@ def _truncate_reference_audio(
 
 
 # ---------------------------------------------------------------------------
+# GPU residency manager
+# ---------------------------------------------------------------------------
+#
+# The old implementation used ``functools.lru_cache(maxsize=6)``, which let all
+# six MOSS checkpoints pile up in VRAM at once. On a 24 GB card that overflows
+# the moment you touch a second large model, after which the NVIDIA driver
+# spills weights to system RAM and inference slows to a crawl. Instead we keep
+# an explicit, size-bounded cache and *actively free* evicted models back to the
+# CUDA allocator so only the active tab's model occupies the GPU (the behaviour
+# the README has always promised).
+
+_RESIDENTS: "OrderedDict[tuple, tuple]" = OrderedDict()
+
+
+def _max_resident_models() -> int:
+    raw = os.getenv(MODEL_CACHE_SIZE_ENV_VAR)
+    if raw is None:
+        return DEFAULT_MODEL_CACHE_SIZE
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return DEFAULT_MODEL_CACHE_SIZE
+
+
+def _release_gpu_memory() -> None:
+    """Return freed allocations to the OS so the next model gets a clean block."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        try:
+            torch.cuda.ipc_collect()
+        except Exception:
+            pass
+
+
+def _evict_to_make_room(incoming: int = 1) -> None:
+    """Drop the oldest residents until ``incoming`` more models fit in the cache.
+
+    Dropping our reference makes the model eligible for garbage collection; the
+    follow-up ``empty_cache`` hands the VRAM back to the allocator.
+    """
+    budget = _max_resident_models()
+    freed = False
+    while _RESIDENTS and len(_RESIDENTS) + incoming > budget:
+        _key, payload = _RESIDENTS.popitem(last=False)
+        del payload
+        freed = True
+    if freed:
+        _release_gpu_memory()
+
+
+def unload_all_models() -> None:
+    """Evict every cached model and free its GPU memory."""
+    _RESIDENTS.clear()
+    _release_gpu_memory()
+
+
+def _cache_get(cache_key: tuple):
+    cached = _RESIDENTS.get(cache_key)
+    if cached is not None:
+        _RESIDENTS.move_to_end(cache_key)  # mark most-recently-used
+    return cached
+
+
+def _cache_put(cache_key: tuple, payload: tuple) -> None:
+    _RESIDENTS[cache_key] = payload
+    _RESIDENTS.move_to_end(cache_key)
+
+
+# ---------------------------------------------------------------------------
+# Quantization
+# ---------------------------------------------------------------------------
+
+def _resolve_quantization() -> str:
+    return (os.getenv(QUANTIZATION_ENV_VAR) or "none").strip().lower()
+
+
+def _build_quantization_config(mode: str, compute_dtype: torch.dtype):
+    """Return a ``BitsAndBytesConfig`` for the requested mode, or ``None``.
+
+    Raises a clear error if quantization is requested but unsupported (no CUDA,
+    or bitsandbytes missing) so the user isn't left guessing.
+    """
+    if mode in {"", "none", "off", "no", "false", "0"}:
+        return None
+
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            f"{QUANTIZATION_ENV_VAR}={mode!r} requires a CUDA GPU; "
+            "quantization is not available on CPU."
+        )
+
+    try:
+        from transformers import BitsAndBytesConfig
+        import bitsandbytes  # noqa: F401  (import to verify it's installed)
+    except Exception as exc:  # pragma: no cover - depends on optional dep
+        raise RuntimeError(
+            f"{QUANTIZATION_ENV_VAR}={mode!r} requires the 'bitsandbytes' package. "
+            "Install it with `pip install bitsandbytes` (CUDA only)."
+        ) from exc
+
+    if mode in {"4bit", "int4", "nf4"}:
+        return BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=compute_dtype,
+            bnb_4bit_use_double_quant=True,
+        )
+    if mode in {"8bit", "int8"}:
+        return BitsAndBytesConfig(load_in_8bit=True)
+
+    raise ValueError(
+        f"Unknown {QUANTIZATION_ENV_VAR} value {mode!r}; expected 'none', '8bit', or '4bit'."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Cached model loader
 # ---------------------------------------------------------------------------
 
@@ -170,9 +295,19 @@ def download_model_files(model_key: str) -> str:
     return download_model_files_for_keys([model_key])
 
 
-@functools.lru_cache(maxsize=6)
 def load_model(model_key: str, device_str: str, attn_implementation: str):
-    """Load and LRU-cache a model + processor pair."""
+    """Load a model + processor pair, keeping at most ``_max_resident_models()``
+    of them resident in GPU memory at a time (others are freed first)."""
+    quantization = _resolve_quantization()
+    cache_key = ("model", model_key, device_str, attn_implementation, quantization)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    # Free other residents *before* allocating the new model so the freed VRAM
+    # is available for it (critical on 24 GB cards juggling 8B checkpoints).
+    _evict_to_make_room(incoming=1)
+
     device = torch.device(device_str if torch.cuda.is_available() else "cpu")
     dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
 
@@ -181,6 +316,7 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
 
     local_model_path = _resolve_hf_path(model_path)
     resolved_attn = resolve_attn_implementation(attn_implementation, device, dtype)
+    quant_config = _build_quantization_config(quantization, dtype)
 
     processor_kwargs: dict = {"trust_remote_code": True}
     if model_key == "ttsd":
@@ -196,19 +332,37 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
     if resolved_attn:
         model_kwargs["attn_implementation"] = resolved_attn
 
-    model = AutoModel.from_pretrained(local_model_path, **model_kwargs).to(device)
+    if quant_config is not None:
+        # bitsandbytes places weights on the GPU itself; ``device_map`` is
+        # required and a follow-up ``.to(device)`` must be skipped.
+        model_kwargs["quantization_config"] = quant_config
+        model_kwargs["device_map"] = {"": device_str}
+        print(f"  quantization: {quantization}")
+        model = AutoModel.from_pretrained(local_model_path, **model_kwargs)
+    else:
+        model = AutoModel.from_pretrained(local_model_path, **model_kwargs).to(device)
     model.eval()
 
     sample_rate = int(getattr(processor.model_config, "sampling_rate", 24000))
     print(f"✓ {model_key} loaded")
-    return model, processor, device, sample_rate
+
+    payload = (model, processor, device, sample_rate)
+    _cache_put(cache_key, payload)
+    return payload
 
 
-@functools.lru_cache(maxsize=1)
 def load_realtime_model(device_str: str, attn_implementation: str):
-    """Load and LRU-cache the MOSS-TTS-Realtime model + codec + inferencer."""
+    """Load the MOSS-TTS-Realtime model + codec + inferencer, sharing the same
+    GPU residency budget as :func:`load_model`."""
     import sys
     import os
+
+    cache_key = ("realtime", device_str, attn_implementation)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    _evict_to_make_room(incoming=1)
 
     device = torch.device(device_str if torch.cuda.is_available() else "cpu")
     dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
@@ -257,4 +411,6 @@ def load_realtime_model(device_str: str, attn_implementation: str):
     )
 
     print("✓ realtime model loaded")
-    return inferencer, codec, device, 24000
+    payload = (inferencer, codec, device, 24000)
+    _cache_put(cache_key, payload)
+    return payload

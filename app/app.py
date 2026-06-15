@@ -65,7 +65,13 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from config import MODELS, PRELOAD_ENV_VAR
+from config import (
+    DEFAULT_MODEL_CACHE_SIZE,
+    MODEL_CACHE_SIZE_ENV_VAR,
+    MODELS,
+    PRELOAD_ENV_VAR,
+    QUANTIZATION_ENV_VAR,
+)
 from model_loader import load_model, resolve_attn_implementation
 from utils import EXAMPLE_ROWS, parse_bool_env, parse_port
 from tabs.tts import build_tts_tab
@@ -143,7 +149,30 @@ def main():
         default=parse_port(os.getenv("GRADIO_SERVER_PORT", os.getenv("PORT")), 7860),
     )
     parser.add_argument("--share", action="store_true")
+    parser.add_argument(
+        "--quantization",
+        type=str,
+        default=None,
+        choices=["none", "8bit", "4bit"],
+        help="Weight quantization (requires bitsandbytes + CUDA). Shrinks VRAM "
+        "use so models fit on smaller GPUs. Default: none (env "
+        f"{QUANTIZATION_ENV_VAR} also honoured).",
+    )
+    parser.add_argument(
+        "--model_cache_size",
+        type=int,
+        default=None,
+        help="Max models kept resident in GPU memory at once (default "
+        f"{DEFAULT_MODEL_CACHE_SIZE}; env {MODEL_CACHE_SIZE_ENV_VAR}). "
+        "Raise on large-VRAM cards to avoid reload latency.",
+    )
     args = parser.parse_args()
+
+    # CLI flags win, but fall back to env vars so Pinokio/Spaces configs work too.
+    if args.quantization is not None:
+        os.environ[QUANTIZATION_ENV_VAR] = args.quantization
+    if args.model_cache_size is not None:
+        os.environ[MODEL_CACHE_SIZE_ENV_VAR] = str(max(1, args.model_cache_size))
 
     args.host = os.getenv("GRADIO_SERVER_NAME", args.host)
     args.port = parse_port(os.getenv("GRADIO_SERVER_PORT", os.getenv("PORT")), args.port)
@@ -161,6 +190,8 @@ def main():
     print("=" * 70)
     print(f"Device:     {args.device}")
     print(f"Attention:  {args.attn_implementation}")
+    print(f"Quantize:   {os.getenv(QUANTIZATION_ENV_VAR, 'none')}")
+    print(f"GPU cache:  {os.getenv(MODEL_CACHE_SIZE_ENV_VAR, str(DEFAULT_MODEL_CACHE_SIZE))} model(s) resident")
     print(f"Host:       {args.host}:{args.port}")
     print(f"Share:      {args.share}")
     print(f"Examples:   {len(EXAMPLE_ROWS)} loaded")

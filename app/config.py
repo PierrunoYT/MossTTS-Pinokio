@@ -1,4 +1,11 @@
+import os
 from pathlib import Path
+
+# Reduce CUDA allocator fragmentation so freeing one model leaves a contiguous
+# block large enough for the next one. Must be set before torch initialises CUDA,
+# so do it here (config is imported early by every module). ``setdefault`` keeps
+# any value the user already exported.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import torch
 
@@ -115,3 +122,16 @@ EXAMPLE_TEXTS_JSONL_PATH = (
 # ---------------------------------------------------------------------------
 
 PRELOAD_ENV_VAR = "MOSS_TTS_PRELOAD_AT_STARTUP"
+
+# How many heavy models may stay resident in GPU memory at once. The MOSS
+# checkpoints are 1.7B–8B; in bf16 each needs roughly 4–16 GB, so caching more
+# than one quickly exhausts a 24 GB card and the NVIDIA driver starts spilling
+# to system RAM (catastrophically slow). Default 1 = only the active tab's model
+# stays on the GPU. Bump this on large-VRAM cards to avoid reload latency.
+MODEL_CACHE_SIZE_ENV_VAR = "MOSS_TTS_MODEL_CACHE_SIZE"
+DEFAULT_MODEL_CACHE_SIZE = 1
+
+# Optional weight quantization (requires bitsandbytes + CUDA). One of:
+# "none" (default, bf16), "8bit", or "4bit". 4-bit cuts an 8B model from
+# ~16 GB to ~5 GB so several models can coexist on modest GPUs.
+QUANTIZATION_ENV_VAR = "MOSS_TTS_QUANTIZATION"
