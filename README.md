@@ -114,20 +114,46 @@ Generate environmental sounds and audio effects from descriptions.
 
 ## Memory Usage
 
-| Model | VRAM Required |
-|-------|---------------|
-| MOSS-TTS-v1.5 | ~10GB |
-| MOSS-TTSD | ~10GB |
-| MOSS-VoiceGenerator | ~8GB |
-| MOSS-SoundEffect | ~10GB |
+| Model | VRAM (bf16) | VRAM (4-bit) |
+|-------|-------------|--------------|
+| MOSS-TTS-v1.5 (8B) | ~16GB | ~6GB |
+| MOSS-TTSD (8B) | ~16GB | ~6GB |
+| MOSS-VoiceGenerator | ~8GB | ~3GB |
+| MOSS-SoundEffect (8B) | ~16GB | ~6GB |
+| MOSS-TTS-Realtime (1.7B) | ~4GB | ~2GB |
 
-Models load on-demand. Only the active tab's model occupies memory.
+Figures are weights only; generation adds a KV cache that grows with
+`max_new_tokens`.
+
+**Only one model stays resident in GPU memory at a time.** When you switch tabs
+(or generate with a different model) the previous model's VRAM is freed before
+the new one loads, so a single 24GB card is plenty for any individual model.
+If you exceed VRAM, the NVIDIA driver silently spills to system RAM and
+generation becomes extremely slow — keeping one model resident avoids that.
+
+### Tuning memory & speed
+
+| Setting | CLI flag | Env var | Default |
+|---------|----------|---------|---------|
+| Weight quantization | `--quantization {none,8bit,4bit}` | `MOSS_TTS_QUANTIZATION` | `none` |
+| Models kept in VRAM | `--model_cache_size N` | `MOSS_TTS_MODEL_CACHE_SIZE` | `1` |
+
+- **`--quantization 4bit`** roughly thirds the weight footprint (needs
+  `pip install bitsandbytes`, CUDA only). Use it to run on <16GB GPUs or to keep
+  several models resident at once.
+- **`--model_cache_size`** trades VRAM for speed: raise it on a large-VRAM card
+  to avoid reloading a model each time you revisit its tab; keep it at `1` on a
+  24GB card.
 
 ## Troubleshooting
 
-**Out of Memory Errors**
+**Out of Memory / very slow generation**
+- Only one model stays resident by default; if it still won't fit, run with
+  `--quantization 4bit` (needs `pip install bitsandbytes`)
 - Close other GPU applications
 - Reduce `max_new_tokens` setting
+- On Windows, disable the NVIDIA driver's *CUDA - System Memory Fallback* (it
+  trades crashes for crawling-slow generation when VRAM is exceeded)
 - Use CPU mode if GPU memory is insufficient
 
 **Installation Issues**
