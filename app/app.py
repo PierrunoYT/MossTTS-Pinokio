@@ -23,23 +23,49 @@ import torch
 
 # ---------------------------------------------------------------------------
 # Transformers compat: MOSS remote code (trust_remote_code=True) references
-# `MODALITY_TO_AE_CLASS_MAPPING`, which was introduced in transformers 5.
-# If an older 4.x install is still present, alias it from the equivalent
-# `AUTO_TO_BASE_CLASS_MAPPING` so the remote code doesn't crash on import.
-# This shim is a no-op on transformers ≥ 5 where the attribute already exists.
+# mapping constants such as `MODALITY_TO_BASE_CLASS_MAPPING` /
+# `MODALITY_TO_AE_CLASS_MAPPING`, which have been renamed across transformers
+# versions (the current name is `AUTO_TO_BASE_CLASS_MAPPING`). Resolve the
+# mapping from whichever name exists and re-expose it under every alias the
+# remote code may look up so its import doesn't crash. This shim is a no-op
+# when the expected attributes already exist.
 # ---------------------------------------------------------------------------
 try:
     import transformers as _tf
+    import transformers.processing_utils as _pu
 
-    if not hasattr(_tf, "MODALITY_TO_AE_CLASS_MAPPING"):
-        _mapping = getattr(_tf, "AUTO_TO_BASE_CLASS_MAPPING", None)
-        if _mapping is not None:
-            _tf.MODALITY_TO_AE_CLASS_MAPPING = _mapping
-            # Also expose it inside the auto sub-module used by remote code
+    # The MOSS remote code references several aliases of the same mapping
+    # that have been renamed across transformers versions.  Resolve the
+    # mapping from whichever name exists, then expose it under every name
+    # the remote code may look up, on both the top-level package and the
+    # processing_utils / auto sub-modules.
+    _alias_names = (
+        "MODALITY_TO_BASE_CLASS_MAPPING",
+        "MODALITY_TO_AE_CLASS_MAPPING",
+        "AUTO_TO_BASE_CLASS_MAPPING",
+    )
+
+    def _resolve_mapping():
+        for _mod in (_pu, _tf):
+            for _name in _alias_names:
+                _candidate = getattr(_mod, _name, None)
+                if _candidate is not None:
+                    return _candidate
+        return None
+
+    _mapping = _resolve_mapping()
+    if _mapping is not None:
+        _targets = [_tf, _pu]
+        try:
             import transformers.models.auto as _auto  # noqa: PLC0415
 
-            if not hasattr(_auto, "MODALITY_TO_AE_CLASS_MAPPING"):
-                _auto.MODALITY_TO_AE_CLASS_MAPPING = _mapping
+            _targets.append(_auto)
+        except Exception:
+            pass
+        for _mod in _targets:
+            for _name in _alias_names:
+                if not hasattr(_mod, _name):
+                    setattr(_mod, _name, _mapping)
 except Exception:
     pass
 
