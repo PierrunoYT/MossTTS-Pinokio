@@ -70,6 +70,26 @@ except Exception:
     pass
 
 # ---------------------------------------------------------------------------
+# Transformers compat: MOSS remote code imports `PreTrainedConfig` from
+# `transformers.configuration_utils`, but older transformers releases only
+# expose it as `PretrainedConfig`. Alias the new name to the old class (and
+# vice versa) so the remote code's import succeeds. No-op when both exist.
+# ---------------------------------------------------------------------------
+try:
+    import transformers as _tf
+    import transformers.configuration_utils as _cu
+
+    _new_name, _old_name = "PreTrainedConfig", "PretrainedConfig"
+    _cfg = getattr(_cu, _new_name, None) or getattr(_cu, _old_name, None)
+    if _cfg is not None:
+        for _mod in (_cu, _tf):
+            for _name in (_new_name, _old_name):
+                if not hasattr(_mod, _name):
+                    setattr(_mod, _name, _cfg)
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
 # Windows: suppress the harmless "WinError 10054 - An existing connection was
 # forcibly closed by the remote host" noise that asyncio's ProactorEventLoop
 # raises whenever a browser tab closes mid-stream.  The error is benign but
