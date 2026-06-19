@@ -4,6 +4,7 @@
 transformers>=5.0.0
 safetensors==0.6.2
 huggingface_hub[hf_xet]
+accelerate>=1.0.0
 
 # Web Interface
 gradio>=6.1.0,<7.0.0

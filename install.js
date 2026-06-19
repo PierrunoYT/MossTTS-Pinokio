@@ -84,7 +84,7 @@ module.exports = {
         venv: "env",
         path: ".",
         message: [
-          "uv pip install bitsandbytes"
+          "uv pip install bitsandbytes accelerate"
         ],
       }
     },

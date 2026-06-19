@@ -23,6 +23,11 @@ def bitsandbytes_available() -> bool:
     try:
         from transformers import BitsAndBytesConfig  # noqa: F401
         import bitsandbytes  # noqa: F401
+        # bitsandbytes loads weights via a ``device_map``, which transformers
+        # only honours when ``accelerate`` is installed. Without it, 4-bit/8-bit
+        # loading raises at ``from_pretrained``; treat it as unavailable so we
+        # degrade to bf16 instead of crashing mid-generation.
+        import accelerate  # noqa: F401
         return True
     except Exception:
         return False
