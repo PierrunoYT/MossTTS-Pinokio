@@ -7,7 +7,9 @@ import gradio as gr
 import numpy as np
 import torch
 
-from model_loader import download_model_files_for_keys, load_realtime_model
+from core import load_realtime_model
+from core.download import download_model_files_for_keys
+from core.memory import free_after_generation
 
 
 # ---------------------------------------------------------------------------
@@ -50,17 +52,19 @@ def run_realtime_inference(
         )
 
         wav_chunks = []
-        for generated_tokens in result:
-            output = torch.tensor(generated_tokens).to(dev)
-            decode_result = codec.decode(output.permute(1, 0), chunk_duration=8)
-            wav = decode_result["audio"][0].cpu().detach()
-            wav_chunks.append(wav)
+        with torch.inference_mode():
+            for generated_tokens in result:
+                output = torch.tensor(generated_tokens).to(dev)
+                decode_result = codec.decode(output.permute(1, 0), chunk_duration=8)
+                wav = decode_result["audio"][0].cpu().detach()
+                wav_chunks.append(wav)
 
         if not wav_chunks:
             return None, "❌ Error: No audio generated"
 
         audio = torch.cat(wav_chunks, dim=-1)
         audio_np = audio.squeeze().float().cpu().numpy()
+        free_after_generation(dev)
         # int16 avoids Gradio's float32→int16 conversion warning; clip to [-1, 1] first
         audio_np = np.clip(audio_np, -1.0, 1.0)
         audio_i16 = (audio_np * 32767.0).astype(np.int16)

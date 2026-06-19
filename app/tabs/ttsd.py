@@ -22,10 +22,16 @@ except ImportError:
 
 import gradio as gr
 import numpy as np
-import soundfile as sf
 import torch
 
-from model_loader import download_model_files_for_keys, load_model
+from core import (
+    Sampling,
+    generate_and_decode,
+    load_audio,
+    load_model,
+    resample_wav,
+)
+from core.download import download_model_files_for_keys
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -149,32 +155,7 @@ def normalize_text(text: str) -> str:
     return "".join(merged_lines).replace("\u2018", "'").replace("\u2019", "'")
 
 
-# ---------------------------------------------------------------------------
-# Audio helpers
-# ---------------------------------------------------------------------------
-
-
-def _load_audio(audio_path: str) -> Tuple[torch.Tensor, int]:
-    path = Path(audio_path).expanduser()
-    if not path.exists():
-        raise FileNotFoundError(f"Reference audio not found: {path}")
-    wav_np, sr = sf.read(path, dtype="float32", always_2d=True)
-    if wav_np.size == 0:
-        raise ValueError(f"Reference audio is empty: {path}")
-    if wav_np.shape[1] > 1:
-        wav_np = wav_np.mean(axis=1, keepdims=True)
-    return torch.from_numpy(wav_np.T), int(sr)
-
-
-def _resample_wav(wav: torch.Tensor, orig_sr: int, target_sr: int) -> torch.Tensor:
-    if int(orig_sr) == int(target_sr):
-        return wav
-    new_len = int(round(wav.shape[-1] * float(target_sr) / float(orig_sr)))
-    if new_len <= 0:
-        raise ValueError(f"Invalid resample length from {orig_sr}Hz to {target_sr}Hz.")
-    return torch.nn.functional.interpolate(
-        wav.unsqueeze(0), size=new_len, mode="linear", align_corners=False
-    ).squeeze(0)
+# Audio loading/resampling are provided by ``core.audio`` (load_audio, resample_wav).
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +352,7 @@ def run_ttsd_inference(
             if has_reference:
                 speaker_id = idx + 1
                 cloned_speakers.append(speaker_id)
-                loaded_clone_wavs.append(_load_audio(str(ref_audio)))
+                loaded_clone_wavs.append(load_audio(str(ref_audio)))
                 prompt_text_map[speaker_id] = _normalize_prompt_text(
                     prompt_text, speaker_id
                 )
@@ -401,9 +382,9 @@ def run_ttsd_inference(
             for wav, orig_sr in loaded_clone_wavs:
                 current_sr = int(orig_sr)
                 if min_sr is not None:
-                    wav = _resample_wav(wav, current_sr, int(min_sr))
+                    wav = resample_wav(wav, current_sr, int(min_sr))
                     current_sr = int(min_sr)
-                clone_wavs.append(_resample_wav(wav, current_sr, sample_rate))
+                clone_wavs.append(resample_wav(wav, current_sr, sample_rate))
 
             reference_audio_codes = _encode_reference_audio_codes(
                 processor=processor,
@@ -424,36 +405,10 @@ def run_ttsd_inference(
             processor=processor,
         )
 
-        batch = processor(conversations, mode=mode)
-        input_ids = batch["input_ids"].to(dev)
-        attention_mask = batch["attention_mask"].to(dev)
-
-        with torch.no_grad():
-            outputs = model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                max_new_tokens=int(max_new_tokens),
-                audio_temperature=float(temperature),
-                audio_top_p=float(top_p),
-                audio_top_k=int(top_k),
-                audio_repetition_penalty=float(repetition_penalty),
-            )
-
-        messages = processor.decode(outputs)
-        if not messages or messages[0] is None:
-            raise RuntimeError("The model did not return a decodable audio result.")
-
-        audio = messages[0].audio_codes_list[0]
-        audio_np = (
-            audio.detach().float().cpu().numpy()
-            if isinstance(audio, torch.Tensor)
-            else np.asarray(audio, dtype=np.float32)
+        sampling = Sampling(temperature, top_p, top_k, repetition_penalty)
+        audio_i16 = generate_and_decode(
+            model, processor, dev, conversations, mode, sampling, int(max_new_tokens)
         )
-        if audio_np.ndim > 1:
-            audio_np = audio_np.reshape(-1)
-        audio_np = audio_np.astype(np.float32, copy=False)
-        audio_np = np.clip(audio_np, -1.0, 1.0)
-        audio_i16 = (audio_np * 32767.0).astype(np.int16)
 
         clone_summary = (
             "none"

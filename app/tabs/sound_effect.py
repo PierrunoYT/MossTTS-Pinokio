@@ -5,10 +5,10 @@ from typing import Optional, Tuple
 
 import gradio as gr
 import numpy as np
-import torch
 
 from config import TOKENS_PER_SECOND
-from model_loader import download_model_files_for_keys, load_model
+from core import Sampling, generate_and_decode, load_model
+from core.download import download_model_files_for_keys
 
 
 # ---------------------------------------------------------------------------
@@ -34,42 +34,17 @@ def run_sound_effect_inference(
 
         expected_tokens = max(1, int(duration_seconds * TOKENS_PER_SECOND))
         conversation = [processor.build_user_message(ambient_sound=description, tokens=expected_tokens)]
-        batch = processor(conversation, mode="generation")
-        input_ids = batch["input_ids"].to(dev)
-        attention_mask = batch["attention_mask"].to(dev)
 
         # Cap generation to the requested duration (+25% slack) so we never grow
         # the KV cache far beyond what the clip needs. A runaway max_new_tokens
         # bloats VRAM and stalls generation long after the audio is complete.
         effective_max_tokens = min(int(max_new_tokens), int(expected_tokens * 1.25) + 16)
 
-        with torch.no_grad():
-            outputs = model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                max_new_tokens=effective_max_tokens,
-                audio_temperature=temperature,
-                audio_top_p=top_p,
-                audio_top_k=top_k,
-                audio_repetition_penalty=repetition_penalty,
-            )
-
-        messages = processor.decode(outputs)
-        if messages and len(messages) > 0:
-            audio = messages[0].audio_codes_list[0]
-            audio_np = (
-                audio.detach().float().cpu().numpy()
-                if isinstance(audio, torch.Tensor)
-                else np.asarray(audio, dtype=np.float32)
-            )
-            if audio_np.ndim > 1:
-                audio_np = audio_np.reshape(-1)
-            audio_np = audio_np.astype(np.float32, copy=False)
-            audio_np = np.clip(audio_np, -1.0, 1.0)
-            audio_i16 = (audio_np * 32767.0).astype(np.int16)
-            return (sample_rate, audio_i16), "✅ Sound effect generated!"
-
-        return None, "❌ Error: No audio generated"
+        sampling = Sampling(temperature, top_p, top_k, repetition_penalty)
+        audio_i16 = generate_and_decode(
+            model, processor, dev, conversation, "generation", sampling, effective_max_tokens
+        )
+        return (sample_rate, audio_i16), "✅ Sound effect generated!"
 
     except Exception as e:
         error_msg = f"❌ Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"

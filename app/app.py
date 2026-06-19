@@ -13,7 +13,6 @@ Usage:
 """
 
 import argparse
-import asyncio
 import os
 import sys
 import time
@@ -21,95 +20,11 @@ import time
 import gradio as gr
 import torch
 
-# ---------------------------------------------------------------------------
-# Transformers compat: MOSS remote code (trust_remote_code=True) references
-# mapping constants such as `MODALITY_TO_BASE_CLASS_MAPPING` /
-# `MODALITY_TO_AE_CLASS_MAPPING`, which have been renamed across transformers
-# versions (the current name is `AUTO_TO_BASE_CLASS_MAPPING`). Resolve the
-# mapping from whichever name exists and re-expose it under every alias the
-# remote code may look up so its import doesn't crash. This shim is a no-op
-# when the expected attributes already exist.
-# ---------------------------------------------------------------------------
-try:
-    import transformers as _tf
-    import transformers.processing_utils as _pu
+# Apply transformers remote-code shims and Windows asyncio noise suppression
+# before anything touches the model stack.
+from core.compat import apply_compat_shims
 
-    # The MOSS remote code references several aliases of the same mapping
-    # that have been renamed across transformers versions.  Resolve the
-    # mapping from whichever name exists, then expose it under every name
-    # the remote code may look up, on both the top-level package and the
-    # processing_utils / auto sub-modules.
-    _alias_names = (
-        "MODALITY_TO_BASE_CLASS_MAPPING",
-        "MODALITY_TO_AE_CLASS_MAPPING",
-        "AUTO_TO_BASE_CLASS_MAPPING",
-    )
-
-    def _resolve_mapping():
-        for _mod in (_pu, _tf):
-            for _name in _alias_names:
-                _candidate = getattr(_mod, _name, None)
-                if _candidate is not None:
-                    return _candidate
-        return None
-
-    _mapping = _resolve_mapping()
-    if _mapping is not None:
-        _targets = [_tf, _pu]
-        try:
-            import transformers.models.auto as _auto  # noqa: PLC0415
-
-            _targets.append(_auto)
-        except Exception:
-            pass
-        for _mod in _targets:
-            for _name in _alias_names:
-                if not hasattr(_mod, _name):
-                    setattr(_mod, _name, _mapping)
-except Exception:
-    pass
-
-# ---------------------------------------------------------------------------
-# Transformers compat: MOSS remote code imports `PreTrainedConfig` from
-# `transformers.configuration_utils`, but older transformers releases only
-# expose it as `PretrainedConfig`. Alias the new name to the old class (and
-# vice versa) so the remote code's import succeeds. No-op when both exist.
-# ---------------------------------------------------------------------------
-try:
-    import transformers as _tf
-    import transformers.configuration_utils as _cu
-
-    _new_name, _old_name = "PreTrainedConfig", "PretrainedConfig"
-    _cfg = getattr(_cu, _new_name, None) or getattr(_cu, _old_name, None)
-    if _cfg is not None:
-        for _mod in (_cu, _tf):
-            for _name in (_new_name, _old_name):
-                if not hasattr(_mod, _name):
-                    setattr(_mod, _name, _cfg)
-except Exception:
-    pass
-
-# ---------------------------------------------------------------------------
-# Windows: suppress the harmless "WinError 10054 - An existing connection was
-# forcibly closed by the remote host" noise that asyncio's ProactorEventLoop
-# raises whenever a browser tab closes mid-stream.  The error is benign but
-# it pollutes logs and can cause unhandled-exception warnings on Python 3.9+.
-# ---------------------------------------------------------------------------
-if sys.platform == "win32":
-    try:
-        from asyncio import proactor_events as _pe
-
-        _orig_call_connection_lost = _pe._ProactorBasePipeTransport._call_connection_lost  # type: ignore[attr-defined]
-
-        def _quiet_call_connection_lost(self, exc):  # type: ignore[override]
-            try:
-                _orig_call_connection_lost(self, exc)
-            except OSError:
-                pass
-
-        _pe._ProactorBasePipeTransport._call_connection_lost = _quiet_call_connection_lost  # type: ignore[attr-defined]
-    except Exception:
-        pass
+apply_compat_shims()
 
 from config import (
     DEFAULT_MODEL_CACHE_SIZE,
@@ -118,7 +33,7 @@ from config import (
     PRELOAD_ENV_VAR,
     QUANTIZATION_ENV_VAR,
 )
-from model_loader import load_model, resolve_attn_implementation
+from core import load_model, resolve_attn_implementation
 from utils import EXAMPLE_ROWS, parse_bool_env, parse_port
 from tabs.tts import build_tts_tab
 from tabs.ttsd import build_ttsd_tab

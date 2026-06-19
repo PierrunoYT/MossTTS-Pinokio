@@ -5,9 +5,9 @@ from typing import Optional, Tuple
 
 import gradio as gr
 import numpy as np
-import torch
 
-from model_loader import download_model_files_for_keys, load_model
+from core import Sampling, generate_and_decode, load_model
+from core.download import download_model_files_for_keys
 
 
 # ---------------------------------------------------------------------------
@@ -34,37 +34,11 @@ def run_voice_gen_inference(
         model, processor, dev, sample_rate = load_model("voice_gen", device, attn_implementation)
 
         conversation = [processor.build_user_message(instruction=instruction, text=text)]
-        batch = processor(conversation, mode="generation")
-        input_ids = batch["input_ids"].to(dev)
-        attention_mask = batch["attention_mask"].to(dev)
-
-        with torch.no_grad():
-            outputs = model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                max_new_tokens=max_new_tokens,
-                audio_temperature=temperature,
-                audio_top_p=top_p,
-                audio_top_k=top_k,
-                audio_repetition_penalty=repetition_penalty,
-            )
-
-        messages = processor.decode(outputs)
-        if messages and len(messages) > 0:
-            audio = messages[0].audio_codes_list[0]
-            audio_np = (
-                audio.detach().float().cpu().numpy()
-                if isinstance(audio, torch.Tensor)
-                else np.asarray(audio, dtype=np.float32)
-            )
-            if audio_np.ndim > 1:
-                audio_np = audio_np.reshape(-1)
-            audio_np = audio_np.astype(np.float32, copy=False)
-            audio_np = np.clip(audio_np, -1.0, 1.0)
-            audio_i16 = (audio_np * 32767.0).astype(np.int16)
-            return (sample_rate, audio_i16), "✅ Voice generation completed!"
-
-        return None, "❌ Error: No audio generated"
+        sampling = Sampling(temperature, top_p, top_k, repetition_penalty)
+        audio_i16 = generate_and_decode(
+            model, processor, dev, conversation, "generation", sampling, max_new_tokens
+        )
+        return (sample_rate, audio_i16), "✅ Voice generation completed!"
 
     except Exception as e:
         error_msg = f"❌ Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
