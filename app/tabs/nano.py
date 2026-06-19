@@ -14,6 +14,8 @@ import gradio as gr
 import torch
 from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
 
+from core.download import resolve_hf_path
+
 try:
     from wetext import Normalizer
 except Exception:
@@ -128,11 +130,16 @@ def _load_nano_runtime(device_hint: str):
     runtime_device = "cuda" if (torch.cuda.is_available() and "cuda" in str(device_hint)) else "cpu"
     dtype = torch.bfloat16 if runtime_device == "cuda" else torch.float32
 
+    # Resolve to local snapshot paths (Windows-safe, shares the local cache and
+    # avoids the remote-code symlink crash) — matches the other tabs' loaders.
+    local_model_path = resolve_hf_path(MODEL_ID)
+    local_tokenizer_path = resolve_hf_path(AUDIO_TOKENIZER_ID)
+
     logger.info("Loading Nano TTS model on %s", runtime_device)
     tts_model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID,
+        local_model_path,
         trust_remote_code=True,
-        torch_dtype=dtype,
+        dtype=dtype,
         low_cpu_mem_usage=True,
     )
     tts_model.eval()
@@ -141,13 +148,13 @@ def _load_nano_runtime(device_hint: str):
 
     logger.info("Loading Nano audio tokenizer")
     audio_tokenizer = AutoModel.from_pretrained(
-        AUDIO_TOKENIZER_ID,
+        local_tokenizer_path,
         trust_remote_code=True,
     )
     audio_tokenizer.eval()
 
     logger.info("Loading Nano text tokenizer")
-    text_tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
+    text_tokenizer = AutoTokenizer.from_pretrained(local_model_path, trust_remote_code=True)
 
     tts_model.to(runtime_device)
     audio_tokenizer.to(runtime_device)
