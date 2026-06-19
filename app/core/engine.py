@@ -88,7 +88,7 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
         processor.audio_tokenizer = processor.audio_tokenizer.to(device)
         processor.audio_tokenizer.eval()
 
-    model_kwargs: dict = {"trust_remote_code": True, "torch_dtype": dtype}
+    model_kwargs: dict = {"trust_remote_code": True, "dtype": dtype}
     if resolved_attn:
         model_kwargs["attn_implementation"] = resolved_attn
 
@@ -141,7 +141,7 @@ def load_realtime_model(device_str: str, attn_implementation: str):
     from mossttsrealtime.modeling_mossttsrealtime import MossTTSRealtime
     from inferencer import MossTTSRealtimeInference
 
-    model_kwargs = {"torch_dtype": dtype}
+    model_kwargs = {"dtype": dtype}
     if resolved_attn:
         model_kwargs["attn_implementation"] = resolved_attn
 
@@ -154,7 +154,7 @@ def load_realtime_model(device_str: str, attn_implementation: str):
     # numerical stability, then feeds them back into conv/linear layers — bf16
     # weights would cause dtype mismatches.
     codec = AutoModel.from_pretrained(
-        local_codec_path, trust_remote_code=True, torch_dtype=torch.float32
+        local_codec_path, trust_remote_code=True, dtype=torch.float32
     ).eval().to(device)
 
     inferencer = MossTTSRealtimeInference(
