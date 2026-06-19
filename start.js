@@ -14,7 +14,7 @@ module.exports = {
         venv: "env",
         path: ".",
         env: {
-          HF_HUB_ENABLE_HF_TRANSFER: "1",
+          HF_XET_HIGH_PERFORMANCE: "1",
           HF_HUB_DOWNLOAD_TIMEOUT: "300",
           PYTHONUTF8: "1",
           TORCHDYNAMO_SUPPRESS_ERRORS: "1",

@@ -11,17 +11,35 @@ from config import CODEC_MODEL_PATH, MODELS
 _MAX_ATTEMPTS = 5
 
 
+def _local_dir_for(repo_id: str) -> str:
+    """A stable, per-repo directory holding real (non-symlinked) files.
+
+    HF's default cache stores ``snapshots/`` as symlinks into ``blobs/`` (where
+    files are hash-named). transformers 5.x's ``_compute_local_source_files_hash``
+    follows those symlinks and then looks for a remote-code module's relative
+    imports as siblings in ``blobs/`` — which don't exist there, raising
+    ``FileNotFoundError``. Downloading into a ``local_dir`` materialises real
+    files side-by-side so relative imports resolve. Kept under the HF cache base
+    so existing cleanup tooling sees it.
+    """
+    base = os.environ.get("HF_HOME") or os.path.join(
+        os.path.expanduser("~"), ".cache", "huggingface"
+    )
+    return os.path.join(base, "local", repo_id.replace("/", "__"))
+
+
 def _download_with_retries(repo_id: str):
-    """Download a repo snapshot into the HF cache, retrying on network errors.
+    """Download a repo into a local_dir of real files, retrying on network errors.
 
     Each attempt resumes thanks to the HF Hub local cache. Returns the local
-    snapshot path.
+    directory path.
     """
     from huggingface_hub import snapshot_download
 
+    local_dir = _local_dir_for(repo_id)
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
-            return snapshot_download(repo_id)
+            return snapshot_download(repo_id, local_dir=local_dir)
         except Exception as exc:
             if attempt == _MAX_ATTEMPTS:
                 raise

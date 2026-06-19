@@ -3,8 +3,7 @@
 # Transformers & Model Loading
 transformers>=5.0.0
 safetensors==0.6.2
-huggingface_hub
-hf-transfer>=0.1.4
+huggingface_hub[hf_xet]
 
 # Web Interface
 gradio>=6.1.0,<7.0.0
