@@ -73,9 +73,14 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
     resolved_attn = rt.resolved_attn()
     quant_config = build_quantization_config(quantization, dtype)
 
-    processor_kwargs: dict = {"trust_remote_code": True}
-    if model_key == "ttsd":
-        processor_kwargs["codec_path"] = resolve_hf_path(CODEC_MODEL_PATH)
+    # Always point the processor at the locally-resolved codec. The MOSS
+    # processors default ``codec_path`` to the bare repo id, which makes them
+    # re-download the audio tokenizer into the *default* HF cache — a second
+    # copy separate from the one our download step placed in the local dir.
+    processor_kwargs: dict = {
+        "trust_remote_code": True,
+        "codec_path": resolve_hf_path(CODEC_MODEL_PATH),
+    }
 
     processor = AutoProcessor.from_pretrained(local_model_path, **processor_kwargs)
 
