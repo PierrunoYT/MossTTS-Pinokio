@@ -33,7 +33,8 @@ from config import (
     PRELOAD_ENV_VAR,
     QUANTIZATION_ENV_VAR,
 )
-from core import load_model, resolve_attn_implementation
+from core import load_model, resolve_attn_implementation, resolve_quantization, set_quantization_override
+from core.quant import bitsandbytes_available
 from utils import EXAMPLE_ROWS, parse_bool_env, parse_port
 from tabs.tts import build_tts_tab
 from tabs.ttsd import build_ttsd_tab
@@ -62,6 +63,53 @@ _CSS = """
 """
 
 
+_QUANT_LABELS = {
+    "auto": "Auto (recommended)",
+    "8bit": "8-bit (higher quality, ~2× the VRAM of 4-bit)",
+    "4bit": "4-bit (smallest VRAM, slight quality loss)",
+    "none": "None / bf16 (best quality, needs most VRAM)",
+}
+_QUANT_FROM_LABEL = {v: k for k, v in _QUANT_LABELS.items()}
+
+
+def _build_quantization_control():
+    """A header dropdown to switch weight quantization at runtime.
+
+    Only meaningful on CUDA with bitsandbytes installed; the new mode applies on
+    the next model load (the resolved mode is part of the model cache key, so a
+    cached model in another mode is reloaded). Hidden on CPU-only setups.
+    """
+    if not (torch.cuda.is_available() and bitsandbytes_available()):
+        return
+
+    current = resolve_quantization()
+    # Reflect the configured starting mode; prefer showing "auto" if that's what
+    # the env/CLI requested rather than its resolved concrete value.
+    requested = (os.getenv(QUANTIZATION_ENV_VAR) or "none").strip().lower()
+    start = requested if requested in _QUANT_LABELS else current
+    if start not in _QUANT_LABELS:
+        start = "none"
+
+    with gr.Row():
+        dropdown = gr.Dropdown(
+            choices=list(_QUANT_LABELS.values()),
+            value=_QUANT_LABELS[start],
+            label="⚙️ Quantization (weight precision)",
+            info="Applies on the next model load. 4-bit fits 8B models on ~6GB; "
+            "8-bit trades more VRAM for better fidelity.",
+            scale=2,
+        )
+        status = gr.Markdown("")
+
+    def _on_change(label: str) -> str:
+        mode = _QUANT_FROM_LABEL.get(label, "auto")
+        # "auto" clears the override so resolution falls back to the env/CLI auto.
+        effective = set_quantization_override(None if mode == "auto" else mode)
+        return f"✓ Set to **{mode}** (effective: `{effective}`). Reloads on next generate."
+
+    dropdown.change(_on_change, inputs=[dropdown], outputs=[status])
+
+
 def build_unified_interface(args):
     with gr.Blocks(title="MOSS-TTS Unified Interface", css=_CSS, theme=gr.themes.Soft()) as app:
         gr.HTML("""
@@ -70,6 +118,8 @@ def build_unified_interface(args):
             <p>Unified Interface for All Models</p>
         </div>
         """)
+
+        _build_quantization_control()
 
         with gr.Tabs():
             with gr.Tab("🎙️ TTS - Voice Cloning"):

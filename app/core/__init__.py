@@ -21,6 +21,7 @@ from core.engine import (
     load_realtime_model,
 )
 from core.memory import unload_all_models
+from core.quant import resolve_quantization, set_quantization_override
 from core.runtime import RuntimeConfig, pick_dtype, resolve_attn_implementation
 
 __all__ = [
@@ -36,6 +37,8 @@ __all__ = [
     "load_model",
     "load_realtime_model",
     "unload_all_models",
+    "resolve_quantization",
+    "set_quantization_override",
     "RuntimeConfig",
     "pick_dtype",
     "resolve_attn_implementation",

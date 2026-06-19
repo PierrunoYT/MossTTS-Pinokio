@@ -18,6 +18,20 @@ _NONE_ALIASES = {"", "none", "off", "no", "false", "0"}
 _4BIT_ALIASES = {"4bit", "int4", "nf4"}
 _8BIT_ALIASES = {"8bit", "int8"}
 
+# A live override the UI can set to switch quantization without a restart. ``None``
+# means "fall back to the CLI/env configuration". Takes precedence over the env var.
+_OVERRIDE: str | None = None
+
+
+def set_quantization_override(mode: str | None) -> str:
+    """Set (or clear with ``None``) the runtime quantization mode and return the
+    concrete mode now in effect. Used by the UI dropdown so a new selection takes
+    effect on the next model load (the resolved mode is part of the model cache
+    key, so switching loads a freshly-quantized variant)."""
+    global _OVERRIDE
+    _OVERRIDE = mode.strip().lower() if isinstance(mode, str) and mode.strip() else None
+    return resolve_quantization()
+
 
 def bitsandbytes_available() -> bool:
     try:
@@ -60,7 +74,7 @@ def resolve_quantization() -> str:
     Returns one of ``"none"``, ``"4bit"``, ``"8bit"`` (other aliases collapse to
     these). ``auto`` is resolved against the live GPU.
     """
-    mode = (os.getenv(QUANTIZATION_ENV_VAR) or "none").strip().lower()
+    mode = (_OVERRIDE or os.getenv(QUANTIZATION_ENV_VAR) or "none").strip().lower()
     if mode == "auto":
         return _auto_quantization()
     if mode in _NONE_ALIASES:
