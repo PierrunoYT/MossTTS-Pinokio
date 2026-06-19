@@ -75,6 +75,19 @@ module.exports = {
         ],
       }
     },
+    // Install bitsandbytes for 4-bit quantization (enabled via auto mode).
+    // Lets the 8B SFX/Dialogue checkpoints fit in ~5GB instead of ~16GB so
+    // they don't overflow VRAM and trigger the slow NVIDIA sysmem fallback.
+    {
+      method: "shell.run",
+      params: {
+        venv: "env",
+        path: ".",
+        message: [
+          "uv pip install bitsandbytes"
+        ],
+      }
+    },
     {
       method: "notify",
       params: {

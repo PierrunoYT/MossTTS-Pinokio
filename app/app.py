@@ -199,9 +199,10 @@ def main():
         "--quantization",
         type=str,
         default=None,
-        choices=["none", "8bit", "4bit"],
+        choices=["auto", "none", "8bit", "4bit"],
         help="Weight quantization (requires bitsandbytes + CUDA). Shrinks VRAM "
-        "use so models fit on smaller GPUs. Default: none (env "
+        "use so 8B models fit on smaller GPUs. 'auto' picks 4-bit on cards "
+        "<=32GB when bitsandbytes is present, else bf16. Default: none (env "
         f"{QUANTIZATION_ENV_VAR} also honoured).",
     )
     parser.add_argument(

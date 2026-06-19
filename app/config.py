@@ -132,6 +132,14 @@ MODEL_CACHE_SIZE_ENV_VAR = "MOSS_TTS_MODEL_CACHE_SIZE"
 DEFAULT_MODEL_CACHE_SIZE = 1
 
 # Optional weight quantization (requires bitsandbytes + CUDA). One of:
-# "none" (default, bf16), "8bit", or "4bit". 4-bit cuts an 8B model from
-# ~16 GB to ~5 GB so several models can coexist on modest GPUs.
+# "auto", "none" (bf16), "8bit", or "4bit". 4-bit cuts an 8B model from
+# ~16 GB to ~5 GB so it fits comfortably on modest GPUs without the NVIDIA
+# driver spilling to system RAM (which makes generation glacially slow).
+# "auto" picks 4-bit on CUDA cards at/under AUTO_QUANT_VRAM_THRESHOLD_GB when
+# bitsandbytes is installed, otherwise falls back to bf16.
 QUANTIZATION_ENV_VAR = "MOSS_TTS_QUANTIZATION"
+
+# GPUs with total VRAM at or below this (GiB) get 4-bit weights under "auto".
+# A bf16 8B checkpoint (~16 GB) + codec + KV cache overruns a 24 GB card during
+# long SFX/dialogue generations, triggering the catastrophic sysmem fallback.
+AUTO_QUANT_VRAM_THRESHOLD_GB = 32.0

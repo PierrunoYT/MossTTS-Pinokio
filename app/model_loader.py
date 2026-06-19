@@ -13,6 +13,7 @@ import torch
 from transformers import AutoModel, AutoProcessor, AutoTokenizer
 
 from config import (
+    AUTO_QUANT_VRAM_THRESHOLD_GB,
     CODEC_MODEL_PATH,
     DEFAULT_MODEL_CACHE_SIZE,
     MAX_REFERENCE_DURATION_SEC,
@@ -187,8 +188,46 @@ def _cache_put(cache_key: tuple, payload: tuple) -> None:
 # Quantization
 # ---------------------------------------------------------------------------
 
+def _bitsandbytes_available() -> bool:
+    try:
+        from transformers import BitsAndBytesConfig  # noqa: F401
+        import bitsandbytes  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def _auto_quantization() -> str:
+    """Pick 4-bit on modest CUDA GPUs when bitsandbytes is available.
+
+    Falls back to ``"none"`` (bf16) when there's no CUDA device, bitsandbytes
+    isn't installed, or the card has plenty of VRAM. Never raises — auto mode
+    must degrade gracefully so the app always starts.
+    """
+    if not torch.cuda.is_available():
+        return "none"
+    if not _bitsandbytes_available():
+        print(
+            "  [quantization] auto: bitsandbytes not installed — running in bf16. "
+            "Install it (`pip install bitsandbytes`) to enable 4-bit."
+        )
+        return "none"
+    try:
+        total_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+    except Exception:
+        return "none"
+    if total_gb <= AUTO_QUANT_VRAM_THRESHOLD_GB:
+        print(f"  [quantization] auto: {total_gb:.0f} GB GPU → using 4-bit (nf4).")
+        return "4bit"
+    print(f"  [quantization] auto: {total_gb:.0f} GB GPU → bf16 (no quantization).")
+    return "none"
+
+
 def _resolve_quantization() -> str:
-    return (os.getenv(QUANTIZATION_ENV_VAR) or "none").strip().lower()
+    mode = (os.getenv(QUANTIZATION_ENV_VAR) or "none").strip().lower()
+    if mode == "auto":
+        return _auto_quantization()
+    return mode
 
 
 def _build_quantization_config(mode: str, compute_dtype: torch.dtype):

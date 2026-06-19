@@ -38,11 +38,16 @@ def run_sound_effect_inference(
         input_ids = batch["input_ids"].to(dev)
         attention_mask = batch["attention_mask"].to(dev)
 
+        # Cap generation to the requested duration (+25% slack) so we never grow
+        # the KV cache far beyond what the clip needs. A runaway max_new_tokens
+        # bloats VRAM and stalls generation long after the audio is complete.
+        effective_max_tokens = min(int(max_new_tokens), int(expected_tokens * 1.25) + 16)
+
         with torch.no_grad():
             outputs = model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                max_new_tokens=max_new_tokens,
+                max_new_tokens=effective_max_tokens,
                 audio_temperature=temperature,
                 audio_top_p=top_p,
                 audio_top_k=top_k,
@@ -107,7 +112,10 @@ def build_sound_effect_tab(args):
                     se_top_p = gr.Slider(0.1, 1.0, value=0.6, step=0.01, label="Top P")
                     se_top_k = gr.Slider(1, 200, value=50, step=1, label="Top K")
                     se_rep_penalty = gr.Slider(0.8, 2.0, value=1.2, step=0.05, label="Repetition Penalty")
-                    se_max_tokens = gr.Slider(256, 8192, value=4096, step=128, label="Max New Tokens")
+                    se_max_tokens = gr.Slider(
+                        256, 8192, value=2048, step=128, label="Max New Tokens",
+                        info="Hard cap; generation is also auto-limited to the chosen duration.",
+                    )
 
                 se_download_btn = gr.Button("📥 Download Model", variant="secondary")
                 se_generate_btn = gr.Button("🎵 Generate Sound", variant="primary", size="lg")

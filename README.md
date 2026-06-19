@@ -135,25 +135,33 @@ generation becomes extremely slow — keeping one model resident avoids that.
 
 | Setting | CLI flag | Env var | Default |
 |---------|----------|---------|---------|
-| Weight quantization | `--quantization {none,8bit,4bit}` | `MOSS_TTS_QUANTIZATION` | `none` |
+| Weight quantization | `--quantization {auto,none,8bit,4bit}` | `MOSS_TTS_QUANTIZATION` | `auto` (Pinokio) |
 | Models kept in VRAM | `--model_cache_size N` | `MOSS_TTS_MODEL_CACHE_SIZE` | `1` |
 
-- **`--quantization 4bit`** roughly thirds the weight footprint (needs
-  `pip install bitsandbytes`, CUDA only). Use it to run on <16GB GPUs or to keep
-  several models resident at once.
+- **`--quantization auto`** (the Pinokio default) loads 4-bit weights on CUDA
+  cards with ≤32GB VRAM when `bitsandbytes` is installed, and falls back to bf16
+  otherwise. This keeps the 8B SFX/Dialogue models around ~6GB so they never
+  overflow a 24GB card.
+- **`--quantization 4bit`** forces the same 4-bit path (needs
+  `pip install bitsandbytes`, CUDA only). Use `none` to force full bf16.
 - **`--model_cache_size`** trades VRAM for speed: raise it on a large-VRAM card
   to avoid reloading a model each time you revisit its tab; keep it at `1` on a
   24GB card.
 
 ## Troubleshooting
 
-**Out of Memory / very slow generation**
-- Only one model stays resident by default; if it still won't fit, run with
-  `--quantization 4bit` (needs `pip install bitsandbytes`)
+**Out of Memory / very slow generation** (especially SFX & Dialogue)
+- 4-bit quantization is on by default (`auto`) so the 8B models fit in ~6GB.
+  If generation is still slow, the most common cause on Windows is below.
+- **On Windows, disable the NVIDIA driver's *CUDA - System Memory Fallback***:
+  NVIDIA Control Panel → Manage 3D Settings → *CUDA - Sysmem Fallback Policy* →
+  **Prefer No Sysmem Fallback**. When VRAM is exceeded this driver feature
+  silently spills to system RAM over PCIe, making generation 10–100× slower
+  (the classic "fills VRAM and becomes glacial" symptom) instead of erroring.
+- Confirm `bitsandbytes` installed (`auto` falls back to bf16 without it — check
+  the startup log for the `[quantization] auto:` line)
 - Close other GPU applications
-- Reduce `max_new_tokens` setting
-- On Windows, disable the NVIDIA driver's *CUDA - System Memory Fallback* (it
-  trades crashes for crawling-slow generation when VRAM is exceeded)
+- Reduce `max_new_tokens` / target duration
 - Use CPU mode if GPU memory is insufficient
 
 **Installation Issues**
