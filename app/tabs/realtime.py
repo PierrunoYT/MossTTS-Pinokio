@@ -35,7 +35,9 @@ def run_realtime_inference(
         if not text or not text.strip():
             return None, "❌ Error: Please enter text to synthesize"
 
-        inferencer, codec, dev, sample_rate = load_realtime_model(device, attn_implementation)
+        inferencer, codec, dev, sample_rate = load_realtime_model(
+            device, attn_implementation, max_length=int(max_length)
+        )
 
         text_list = [text]
         ref_list = [reference_audio if reference_audio else ""]

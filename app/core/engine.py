@@ -111,9 +111,13 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
     return payload
 
 
-def load_realtime_model(device_str: str, attn_implementation: str):
-    """Load the MOSS-TTS-Realtime inferencer + codec, sharing the residency budget."""
-    cache_key = ("realtime", device_str, attn_implementation)
+def load_realtime_model(device_str: str, attn_implementation: str, max_length: int = 5000):
+    """Load the MOSS-TTS-Realtime inferencer + codec, sharing the residency budget.
+
+    ``max_length`` is part of the cache key so changing it in the UI reloads the
+    inferencer with the new limit instead of silently reusing a cached one.
+    """
+    cache_key = ("realtime", device_str, attn_implementation, int(max_length))
     cached = cache_get(cache_key)
     if cached is not None:
         return cached
@@ -159,7 +163,7 @@ def load_realtime_model(device_str: str, attn_implementation: str):
 
     inferencer = MossTTSRealtimeInference(
         model, tokenizer,
-        max_length=5000,
+        max_length=int(max_length),
         codec=codec,
         codec_sample_rate=24000,
         codec_encode_kwargs={"chunk_duration": 8},
