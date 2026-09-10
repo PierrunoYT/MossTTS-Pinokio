@@ -33,7 +33,7 @@ def run_sound_effect_inference(
         model, processor, dev, sample_rate = load_model("sound_effect", device, attn_implementation)
 
         expected_tokens = max(1, int(duration_seconds * TOKENS_PER_SECOND))
-        conversation = [processor.build_user_message(ambient_sound=description, tokens=expected_tokens)]
+        conversation = [[processor.build_user_message(ambient_sound=description, tokens=expected_tokens)]]
 
         # Cap generation to the requested duration (+25% slack) so we never grow
         # the KV cache far beyond what the clip needs. A runaway max_new_tokens

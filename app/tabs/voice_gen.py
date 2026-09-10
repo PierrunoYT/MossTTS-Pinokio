@@ -33,7 +33,7 @@ def run_voice_gen_inference(
 
         model, processor, dev, sample_rate = load_model("voice_gen", device, attn_implementation)
 
-        conversation = [processor.build_user_message(instruction=instruction, text=text)]
+        conversation = [[processor.build_user_message(instruction=instruction, text=text)]]
         sampling = Sampling(temperature, top_p, top_k, repetition_penalty)
         audio_i16 = generate_and_decode(
             model, processor, dev, conversation, "generation", sampling, max_new_tokens

@@ -43,7 +43,8 @@ def parse_port(value: Optional[str], default: int) -> int:
     if not value:
         return default
     try:
-        return int(value)
+        port = int(value)
+        return port if 1 <= port <= 65535 else default
     except ValueError:
         return default
 

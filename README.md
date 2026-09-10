@@ -23,7 +23,7 @@ This application is packaged for [Pinokio](https://pinokio.com/) for one-click i
 **Available Commands:**
 - **Install** - Sets up Python environment, installs dependencies, and configures PyTorch for your GPU
 - **Start** - Launches the Gradio UI on `127.0.0.1` using Pinokio’s next available port (avoiding conflicts). After startup, use **Open Web UI** in Pinokio or the URL printed in the terminal.
-- **Update** - Pulls latest changes from repository
+- **Update** - Pulls launcher and model-source changes, restores missing source repositories, and refreshes dependencies without starting the server. Local Git conflicts stop the update and are shown in the terminal.
 - **Reset** - Removes the `env` virtual environment for a clean reinstall
 
 ## Programmatic access
@@ -31,7 +31,7 @@ This application is packaged for [Pinokio](https://pinokio.com/) for one-click i
 - **Pinokio (launcher scripts)** — Run actions from the Pinokio UI, or invoke scripts programmatically with Pinokio’s `script.start` API (for example from another launcher script) using the target script’s file name as `uri` and any `params` your flow needs. Launcher scripts live in the project root (`install.js`, `start.js`, `update.js`, `reset.js`, `link.js`).
 - **Python** — Application code lives under `app/`. After dependencies are installed (virtualenv at project root), from the repo root:  
   `python app/app.py --host 127.0.0.1 --port <port>`  
-  Or: `cd app` then `python app.py ...`. Defaults in `app/app.py` are `--host` (platform-specific) and `--port 7860` if you omit flags.
+  Or: `cd app` then `python app.py ...`. Defaults are `--host 127.0.0.1` and `--port 7860`. `GRADIO_SERVER_NAME` and `GRADIO_SERVER_PORT` (or `PORT`) supply defaults; explicit CLI flags take precedence. `--model_path` overrides the main TTS checkpoint.
 - **HTTP (curl)** — The Gradio server is a normal HTTP app. Once it is listening, you can probe it with curl, for example:  
   `curl -sS -I http://127.0.0.1:<port>/`  
   Replace `<port>` with the port shown at startup (Pinokio assigns a free port when you start from the launcher).
@@ -39,7 +39,7 @@ This application is packaged for [Pinokio](https://pinokio.com/) for one-click i
 ## System Requirements
 
 **Minimum:**
-- Python 3.10 or higher (3.12 recommended)
+- Python 3.10 (Pinokio's bundled Flash Attention wheels target Python 3.10)
 - 16GB RAM
 - 50GB free disk space
 - Internet connection for model downloads
@@ -50,6 +50,11 @@ This application is packaged for [Pinokio](https://pinokio.com/) for one-click i
 - CUDA 12.8 compatible drivers
 
 **Note:** CPU-only mode is supported but significantly slower.
+
+Windows and Linux are supported, along with Apple Silicon macOS in CPU mode.
+AMD GPUs on Windows use CPU mode because this app does not implement DirectML.
+Intel macOS is unsupported: its available PyTorch 2.2 wheels do not meet the
+Transformers 5 requirement of PyTorch 2.4 or newer.
 
 ## Usage Guide
 
@@ -120,7 +125,7 @@ Generate environmental sounds and audio effects from descriptions.
 | MOSS-TTSD (8B) | ~16GB | ~6GB |
 | MOSS-VoiceGenerator | ~8GB | ~3GB |
 | MOSS-SoundEffect (8B) | ~16GB | ~6GB |
-| MOSS-TTS-Realtime (1.7B) | ~4GB | ~2GB |
+| MOSS-TTS-Realtime (1.7B) | ~4GB | Not implemented |
 
 Figures are weights only; generation adds a KV cache that grows with
 `max_new_tokens`.
@@ -130,6 +135,8 @@ Figures are weights only; generation adds a KV cache that grows with
 the new one loads, so a single 24GB card is plenty for any individual model.
 If you exceed VRAM, the NVIDIA driver silently spills to system RAM and
 generation becomes extremely slow — keeping one model resident avoids that.
+Nano's native model also participates in this cache. All six generation buttons
+share one queue so requests from different tabs cannot load models concurrently.
 
 ### Tuning memory & speed
 
@@ -186,6 +193,21 @@ generation becomes extremely slow — keeping one model resident avoids that.
 3. **Descriptive prompts** - Provide detailed descriptions for voice/sound generation
 4. **Adjust settings** - Experiment with temperature and sampling parameters
 5. **Monitor memory** - Close unused applications when running large models
+
+## Development checks
+
+Install the application requirements plus `pytest` in a Python environment with
+PyTorch, then run from the repository root:
+
+```bash
+python -m pytest tests -q
+node --test tests/launchers.test.js
+```
+
+The tests cover UI construction, generation queue sharing, device and quantization
+selection, input validation, audio file handling, and launcher control flow. Model
+loaders are mocked where weights would otherwise be downloaded; these checks do
+not measure speech quality or validate CUDA/ROCm inference.
 
 ## Resources
 

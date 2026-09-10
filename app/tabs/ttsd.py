@@ -147,10 +147,10 @@ def normalize_text(text: str) -> str:
         if part["tag"] == current_tag and current_tag:
             current_content.append(part["content"])
         else:
-            merged_lines.append(f"{current_tag}{''.join(current_content)}".strip())
+            merged_lines.append(f"{current_tag}{' '.join(current_content)}".strip())
             current_tag = part["tag"]
             current_content = [part["content"]]
-    merged_lines.append(f"{current_tag}{''.join(current_content)}".strip())
+    merged_lines.append(f"{current_tag}{' '.join(current_content)}".strip())
 
     return "".join(merged_lines).replace("\u2018", "'").replace("\u2019", "'")
 
@@ -170,6 +170,8 @@ def _validate_dialogue_text(dialogue_text: str, speaker_count: int) -> str:
     tags = re.findall(r"\[S(\d+)\]", text)
     if not tags:
         raise ValueError("Dialogue must include speaker tags like [S1], [S2], ...")
+    if any(int(tag) < 1 for tag in tags):
+        raise ValueError("Speaker tags start at [S1]; [S0] is invalid.")
     max_tag = max(int(t) for t in tags)
     if max_tag > speaker_count:
         raise ValueError(
@@ -191,7 +193,7 @@ def _merge_consecutive_speaker_tags(text: str) -> str:
             continue
         tag, content = matched.groups()
         if tag == current_tag:
-            merged_parts.append(content)
+            merged_parts.append(" " + content)
         else:
             current_tag = tag
             merged_parts.append(f"{tag}{content}")
@@ -203,6 +205,8 @@ def _normalize_prompt_text(prompt_text: str, speaker_id: int) -> str:
     if not text:
         raise ValueError(f"S{speaker_id} prompt text is empty.")
     expected_tag = f"[S{speaker_id}]"
+    if any(int(tag) != speaker_id for tag in re.findall(r"\[S(\d+)\]", text)):
+        raise ValueError(f"S{speaker_id} prompt text must only contain {expected_tag} tags.")
     if not text.lstrip().startswith(expected_tag):
         text = f"{expected_tag} {text}"
     return text
@@ -324,10 +328,6 @@ def run_ttsd_inference(
 
     started_at = time.monotonic()
     try:
-        model, processor, dev, sample_rate = load_model(
-            "ttsd", device, attn_implementation
-        )
-
         text_normalize = bool(text_normalize)
         sample_rate_normalize = bool(sample_rate_normalize)
 
@@ -357,6 +357,10 @@ def run_ttsd_inference(
                 prompt_text_map[speaker_id] = _normalize_prompt_text(
                     prompt_text, speaker_id
                 )
+
+        model, processor, dev, sample_rate = load_model(
+            "ttsd", device, attn_implementation
+        )
 
         prompt_audio: Optional[torch.Tensor] = None
         reference_audio_codes: list = []
@@ -539,8 +543,8 @@ def build_ttsd_tab(args):
                     headers=["Field", "Value (click any row to fill inputs)"],
                     value=PRESET_TABLE_ROWS,
                     datatype=["str", "str"],
-                    row_count=(len(PRESET_TABLE_ROWS), "fixed"),
-                    col_count=(2, "fixed"),
+                    row_count=len(PRESET_TABLE_ROWS),
+                    column_count=2,
                     interactive=False,
                     wrap=True,
                     label="Preset Examples",
