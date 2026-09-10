@@ -301,6 +301,7 @@ def apply_preset_selection(evt: gr.SelectData):
 
 
 @spaces.GPU(duration=180)
+@torch.inference_mode()
 def run_ttsd_inference(
     speaker_count: int,
     *all_inputs,
@@ -582,6 +583,8 @@ def build_ttsd_tab(args):
                 max_new_tokens,
             ],
             outputs=[ttsd_output, ttsd_status],
+            concurrency_id="model_inference",
+            concurrency_limit=1,
         )
 
         ttsd_download_btn.click(

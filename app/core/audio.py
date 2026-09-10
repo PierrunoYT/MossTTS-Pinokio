@@ -50,9 +50,14 @@ def truncate_reference_audio(
         f"⚠️  Reference audio is {len(y) / sr:.1f}s — truncating to {max_duration:.0f}s "
         f"to avoid GPU OOM in the audio tokenizer."
     )
-    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-    sf.write(tmp.name, y[:max_samples], sr)
-    return tmp.name
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+    try:
+        sf.write(str(tmp_path), y[:max_samples], sr)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    return str(tmp_path)
 
 
 def load_audio(audio_path: str) -> Tuple[torch.Tensor, int]:

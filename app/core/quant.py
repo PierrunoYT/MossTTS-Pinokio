@@ -47,9 +47,9 @@ def bitsandbytes_available() -> bool:
         return False
 
 
-def _auto_quantization() -> str:
+def _auto_quantization(device=None) -> str:
     """Pick 4-bit on modest CUDA GPUs when bitsandbytes is available, else bf16."""
-    if not torch.cuda.is_available():
+    if not torch.cuda.is_available() or (device is not None and device.type != "cuda"):
         return "none"
     if not bitsandbytes_available():
         print(
@@ -58,7 +58,7 @@ def _auto_quantization() -> str:
         )
         return "none"
     try:
-        total_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+        total_gb = torch.cuda.get_device_properties(device).total_memory / (1024 ** 3)
     except Exception:
         return "none"
     if total_gb <= AUTO_QUANT_VRAM_THRESHOLD_GB:
@@ -68,7 +68,7 @@ def _auto_quantization() -> str:
     return "none"
 
 
-def resolve_quantization() -> str:
+def resolve_quantization(device=None) -> str:
     """Resolve the configured quantization mode to a concrete one.
 
     Returns one of ``"none"``, ``"4bit"``, ``"8bit"`` (other aliases collapse to
@@ -76,7 +76,7 @@ def resolve_quantization() -> str:
     """
     mode = (_OVERRIDE or os.getenv(QUANTIZATION_ENV_VAR) or "none").strip().lower()
     if mode == "auto":
-        return _auto_quantization()
+        return _auto_quantization(device)
     if mode in _NONE_ALIASES:
         return "none"
     if mode in _4BIT_ALIASES:

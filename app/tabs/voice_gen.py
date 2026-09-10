@@ -101,6 +101,8 @@ def build_voice_gen_tab(args):
             fn=lambda *x: run_voice_gen_inference(*x, args.device, args.attn_implementation),
             inputs=[vg_instruction, vg_text, vg_temp, vg_top_p, vg_top_k, vg_rep_penalty, vg_max_tokens],
             outputs=[vg_output, vg_status],
+            concurrency_id="model_inference",
+            concurrency_limit=1,
         )
 
         vg_download_btn.click(

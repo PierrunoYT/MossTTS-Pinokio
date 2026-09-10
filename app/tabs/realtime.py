@@ -139,6 +139,8 @@ def build_realtime_tab(args):
             fn=lambda *x: run_realtime_inference(*x, args.device, args.attn_implementation),
             inputs=[rt_text, rt_reference, rt_temp, rt_top_p, rt_top_k, rt_rep_penalty, rt_rep_window, rt_max_length],
             outputs=[rt_output, rt_status],
+            concurrency_id="model_inference",
+            concurrency_limit=1,
         )
 
         rt_download_btn.click(

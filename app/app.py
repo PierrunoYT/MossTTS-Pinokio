@@ -33,7 +33,7 @@ from config import (
     PRELOAD_ENV_VAR,
     QUANTIZATION_ENV_VAR,
 )
-from core import load_model, resolve_attn_implementation, resolve_quantization, set_quantization_override
+from core import RuntimeConfig, load_model, resolve_quantization, set_quantization_override
 from core.quant import bitsandbytes_available
 from utils import EXAMPLE_ROWS, parse_bool_env, parse_port
 from tabs.tts import build_tts_tab
@@ -103,15 +103,14 @@ def _build_quantization_control():
 
     def _on_change(label: str) -> str:
         mode = _QUANT_FROM_LABEL.get(label, "auto")
-        # "auto" clears the override so resolution falls back to the env/CLI auto.
-        effective = set_quantization_override(None if mode == "auto" else mode)
+        effective = set_quantization_override(mode)
         return f"✓ Set to **{mode}** (effective: `{effective}`). Reloads on next generate."
 
     dropdown.change(_on_change, inputs=[dropdown], outputs=[status])
 
 
 def build_unified_interface(args):
-    with gr.Blocks(title="MOSS-TTS Unified Interface", css=_CSS, theme=gr.themes.Soft()) as app:
+    with gr.Blocks(title="MOSS-TTS Unified Interface") as app:
         gr.HTML("""
         <div class="app-header">
             <h1>🎵 MOSS-TTS Family</h1>
@@ -152,7 +151,7 @@ def main():
     parser.add_argument("--model_path", type=str, default=MODELS["tts"])
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--attn_implementation", type=str, default="auto")
-    _default_host = "127.0.0.1" if sys.platform == "win32" else "0.0.0.0"
+    _default_host = os.getenv("GRADIO_SERVER_NAME", "127.0.0.1")
     parser.add_argument("--host", type=str, default=_default_host)
     parser.add_argument(
         "--port",
@@ -186,16 +185,10 @@ def main():
     if args.model_cache_size is not None:
         os.environ[MODEL_CACHE_SIZE_ENV_VAR] = str(max(1, args.model_cache_size))
 
-    args.host = os.getenv("GRADIO_SERVER_NAME", args.host)
-    args.port = parse_port(os.getenv("GRADIO_SERVER_PORT", os.getenv("PORT")), args.port)
-
-    runtime_device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-    runtime_dtype = torch.bfloat16 if runtime_device.type == "cuda" else torch.float32
-    args.attn_implementation = resolve_attn_implementation(
-        requested=args.attn_implementation,
-        device=runtime_device,
-        dtype=runtime_dtype,
-    ) or "none"
+    MODELS["tts"] = args.model_path
+    runtime = RuntimeConfig(args.device, args.attn_implementation)
+    args.device = str(runtime.device)
+    args.attn_implementation = runtime.resolved_attn() or "none"
 
     print("=" * 70)
     print("MOSS-TTS Unified Interface")
@@ -224,13 +217,14 @@ def main():
     print("\n⏳ Building interface…")
     app = build_unified_interface(args)
     print("✅ Interface ready!")
-    print(f"🌐 http://{args.host}:{args.port}\n")
 
     app.queue(max_size=20, default_concurrency_limit=1).launch(
         server_name=args.host,
         server_port=args.port,
         share=args.share,
         ssr_mode=False,
+        css=_CSS,
+        theme=gr.themes.Soft(),
     )
 
 

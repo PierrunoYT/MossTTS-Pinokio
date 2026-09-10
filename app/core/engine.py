@@ -53,7 +53,8 @@ def _runtime(device_str: str, attn_implementation: str) -> RuntimeConfig:
 def load_model(model_key: str, device_str: str, attn_implementation: str):
     """Load a (model, processor, device, sample_rate) tuple, keeping at most
     ``max_resident_models()`` resident in GPU memory (others freed first)."""
-    quantization = resolve_quantization()
+    rt = _runtime(device_str, attn_implementation)
+    quantization = resolve_quantization(rt.device)
     cache_key = ("model", model_key, device_str, attn_implementation, quantization)
     cached = cache_get(cache_key)
     if cached is not None:
@@ -63,7 +64,6 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
     # to the incoming 8B checkpoint (critical on 24 GB cards).
     evict_to_make_room(incoming=1)
 
-    rt = _runtime(device_str, attn_implementation)
     device, dtype = rt.device, rt.dtype
 
     model_path = MODELS[model_key]
@@ -96,7 +96,7 @@ def load_model(model_key: str, device_str: str, attn_implementation: str):
         # bitsandbytes places weights on the GPU itself; ``device_map`` is
         # required and a follow-up ``.to(device)`` must be skipped.
         model_kwargs["quantization_config"] = quant_config
-        model_kwargs["device_map"] = {"": device_str}
+        model_kwargs["device_map"] = {"": str(device)}
         print(f"  quantization: {quantization}")
         model = AutoModel.from_pretrained(local_model_path, **model_kwargs)
     else:
@@ -179,6 +179,7 @@ def load_realtime_model(device_str: str, attn_implementation: str, max_length: i
 # Shared generation
 # ---------------------------------------------------------------------------
 
+@torch.inference_mode()
 def generate_and_decode(
     model,
     processor,
@@ -209,7 +210,7 @@ def generate_and_decode(
             )
 
         messages = processor.decode(outputs)
-        if not messages or messages[0] is None:
+        if not messages or messages[0] is None or not messages[0].audio_codes_list:
             raise RuntimeError("The model did not return a decodable audio result.")
 
         return audio_to_int16(messages[0].audio_codes_list[0])

@@ -52,13 +52,14 @@ def _download_with_retries(repo_id: str):
 
 
 def resolve_hf_path(repo_id: str) -> str:
-    """Resolve a HuggingFace repo ID to a local snapshot path on Windows.
+    """Resolve a HuggingFace repo ID to the same local directory used by prefetch.
 
     Custom processor code often calls ``Path(repo_id)`` which on Windows turns
     the ``/`` in ``Org/Model`` into backslashes, producing an invalid repo ID.
-    Pre-downloading with ``snapshot_download`` gives us a real local path.
+    Pre-downloading with ``snapshot_download`` gives us a real local path and
+    avoids downloading a second copy on Linux and macOS.
     """
-    if sys.platform == "win32" and "/" in repo_id and not os.path.isdir(repo_id):
+    if not os.path.isdir(repo_id) and not os.path.isabs(repo_id) and "/" in repo_id:
         return _download_with_retries(repo_id)
     return repo_id
 

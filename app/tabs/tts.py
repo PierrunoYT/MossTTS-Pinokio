@@ -333,6 +333,8 @@ def build_tts_tab(args):
                 tts_temp, tts_top_p, tts_top_k, tts_rep_penalty, tts_max_tokens,
             ],
             outputs=[tts_output, tts_status],
+            concurrency_id="model_inference",
+            concurrency_limit=1,
         )
 
         tts_download_btn.click(

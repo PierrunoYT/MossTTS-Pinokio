@@ -7,3 +7,9 @@ app/generated_audio/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Local validation environments and runtime logs
+.test-env/
+.test-cache/
+.pytest_cache/
+logs/

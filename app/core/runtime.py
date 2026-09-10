@@ -15,8 +15,11 @@ import torch
 
 
 def pick_dtype(device: torch.device) -> torch.dtype:
-    """bf16 on CUDA (the MOSS checkpoints' native precision), fp32 on CPU."""
-    return torch.bfloat16 if device.type == "cuda" else torch.float32
+    """Use native bf16 where supported, fp16 on older CUDA cards, fp32 on CPU."""
+    if device.type == "cuda":
+        with torch.cuda.device(device):
+            return torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    return torch.float32
 
 
 def resolve_attn_implementation(

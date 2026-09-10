@@ -3,18 +3,22 @@
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import traceback
 from pathlib import Path
 from typing import Optional, Tuple
+from uuid import uuid4
 
 import gradio as gr
 import torch
 from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
 
 from core.download import resolve_hf_path
+from core.memory import cache_get, cache_put, evict_to_make_room
+from core.runtime import RuntimeConfig
 
 try:
     from wetext import Normalizer
@@ -64,9 +68,6 @@ SAMPLE_AUDIO = {
     "Chinese": str(NANO_DIR / "assets" / "audio" / "zh_1.wav"),
     "Japanese": str(NANO_DIR / "assets" / "audio" / "jp_2.wav"),
 }
-
-_NANO_RUNTIME = None
-
 
 def _ensure_nano_repo() -> Optional[str]:
     if not NANO_DIR.exists():
@@ -119,16 +120,19 @@ def _normalize_with_wetext_fallback(text: str, lang: str) -> Tuple[str, str]:
 
 
 def _load_nano_runtime(device_hint: str):
-    global _NANO_RUNTIME
-    if _NANO_RUNTIME is not None:
-        return _NANO_RUNTIME
+    rt = RuntimeConfig(device_hint, "auto")
+    cache_key = ("nano", str(rt.device))
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached[0]
 
     repo_error = _ensure_nano_repo()
     if repo_error:
         raise RuntimeError(repo_error)
 
-    runtime_device = "cuda" if (torch.cuda.is_available() and "cuda" in str(device_hint)) else "cpu"
-    dtype = torch.bfloat16 if runtime_device == "cuda" else torch.float32
+    evict_to_make_room(incoming=1)
+    runtime_device = str(rt.device)
+    dtype = rt.dtype
 
     # Resolve to local snapshot paths (Windows-safe, shares the local cache and
     # avoids the remote-code symlink crash) — matches the other tabs' loaders.
@@ -159,13 +163,14 @@ def _load_nano_runtime(device_hint: str):
     tts_model.to(runtime_device)
     audio_tokenizer.to(runtime_device)
 
-    _NANO_RUNTIME = {
+    runtime = {
         "tts_model": tts_model,
         "audio_tokenizer": audio_tokenizer,
         "text_tokenizer": text_tokenizer,
         "device": runtime_device,
     }
-    return _NANO_RUNTIME
+    cache_put(cache_key, (runtime,))
+    return runtime
 
 
 def _safe_ref_path(example_lang: str, uploaded: Optional[str]) -> Optional[str]:
@@ -205,6 +210,7 @@ def _check_audio_duration(path: str) -> Optional[str]:
         return None
 
 
+@torch.inference_mode()
 def run_nano_inference(
     text: str,
     reference_audio: Optional[str],
@@ -246,7 +252,7 @@ def run_nano_inference(
                     torch.cuda.manual_seed(seed_int)
 
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            out_path = OUTPUT_DIR / f"nano_{os.getpid()}_{abs(hash(normalized_text)) % 1000000}.wav"
+            out_path = OUTPUT_DIR / f"nano_{uuid4().hex}.wav"
             result = tts_model.inference(
                 text=normalized_text,
                 output_audio_path=str(out_path),
@@ -322,6 +328,8 @@ def _run_nano_onnx_fallback(
             env={**os.environ, "PYTHONUTF8": "1"},
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         if result.returncode != 0:
@@ -333,8 +341,8 @@ def _run_nano_onnx_fallback(
             return None, "❌ Nano ONNX fallback finished but produced no output file."
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        final_out = OUTPUT_DIR / f"nano_onnx_{os.getpid()}_{abs(hash(text)) % 1000000}.wav"
-        out_wav.replace(final_out)
+        final_out = OUTPUT_DIR / f"nano_onnx_{uuid4().hex}.wav"
+        shutil.copyfile(out_wav, final_out)
         status = "✅ Nano generation completed via ONNX fallback."
         if normalizer_method != "none":
             status += f" Text normalization: {normalizer_method}."
@@ -416,4 +424,6 @@ def build_nano_tab(args):
                 nano_lang,
             ],
             outputs=[nano_output, nano_status],
+            concurrency_id="model_inference",
+            concurrency_limit=1,
         )

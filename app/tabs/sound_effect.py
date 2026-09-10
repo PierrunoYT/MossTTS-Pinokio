@@ -111,6 +111,8 @@ def build_sound_effect_tab(args):
             fn=lambda *x: run_sound_effect_inference(*x, args.device, args.attn_implementation),
             inputs=[se_description, se_duration, se_temp, se_top_p, se_top_k, se_rep_penalty, se_max_tokens],
             outputs=[se_output, se_status],
+            concurrency_id="model_inference",
+            concurrency_limit=1,
         )
 
         se_download_btn.click(
