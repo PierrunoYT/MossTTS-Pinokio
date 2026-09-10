@@ -1,6 +1,14 @@
 module.exports = {
   run: [
     {
+      when: "{{platform === 'darwin' && arch !== 'arm64'}}",
+      method: "notify",
+      params: {
+        html: "Intel macOS is unsupported: MOSS-TTS requires PyTorch 2.4 or newer. Use Windows, Linux, or an Apple Silicon Mac."
+      },
+      next: null
+    },
+    {
       method: "notify",
       params: {
         html: "Installing MOSS-TTS..."
@@ -79,6 +87,7 @@ module.exports = {
     // Lets the 8B SFX/Dialogue checkpoints fit in ~5GB instead of ~16GB so
     // they don't overflow VRAM and trigger the slow NVIDIA sysmem fallback.
     {
+      when: "{{gpu === 'nvidia'}}",
       method: "shell.run",
       params: {
         venv: "env",
@@ -95,6 +104,7 @@ module.exports = {
       }
     },
     {
+      when: "{{!(args && args.skip_start)}}",
       method: "script.start",
       params: {
         uri: "start.js"

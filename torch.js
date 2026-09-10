@@ -32,14 +32,14 @@ module.exports = {
  },
  "next": null
  },
- // amd windows
+ // AMD Windows uses CPU: the app does not have a DirectML runtime.
  {
  "when": "{{gpu === 'amd' && platform === 'win32'}}",
  "method": "shell.run",
  "params": {
  "venv": "{{args && args.venv ? args.venv : null}}",
  "path": "{{args && args.path ? args.path : '.'}}",
- "message": "uv pip install torch torch-directml torchaudio torchvision numpy==1.26.4 --force-reinstall"
+ "message": "uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cpu --force-reinstall"
  },
  "next": null
  },
@@ -68,12 +68,11 @@ module.exports = {
  // intel mac
  {
  "when": "{{platform === 'darwin' && arch !== 'arm64'}}",
- "method": "shell.run",
+ "method": "notify",
  "params": {
- "venv": "{{args && args.venv ? args.venv : null}}",
- "path": "{{args && args.path ? args.path : '.'}}",
- "message": "uv pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cpu --force-reinstall --no-deps"
- }
+ "html": "Intel macOS is unsupported: MOSS-TTS requires PyTorch 2.4 or newer."
+ },
+ "next": null
  },
  // cpu
  {

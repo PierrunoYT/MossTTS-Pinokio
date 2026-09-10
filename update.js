@@ -3,35 +3,23 @@ module.exports = {
     {
       method: "shell.run",
       params: {
-        message: [
-          "git pull",
-          "git -C app/MOSS-TTS pull || true",
-          "git -C app/MOSS-TTS-Nano pull || true"
-        ]
+        message: "git pull --ff-only"
       }
     },
-    {
+    ...["app/MOSS-TTS", "app/MOSS-TTS-Nano"].map(path => ({
+      when: `{{exists('${path}')}}`,
       method: "shell.run",
       params: {
-        venv: "env",
-        path: ".",
-        message: [
-          "uv pip install -r app/requirements.txt",
-          "uv pip install onnxruntime sentencepiece python-multipart wetext",
-          "uv pip install --no-deps -e app/MOSS-TTS"
-        ]
+        path,
+        message: "git pull --ff-only"
       }
-    },
+    })),
+    // Reuse installation so missing repos and all dependencies are restored.
     {
       method: "script.start",
       params: {
-        uri: "torch.js",
-        params: {
-          venv: "env",
-          path: ".",
-          flashattention: true,
-          triton: true
-        }
+        uri: "install.js",
+        params: { skip_start: true }
       }
     }
   ]

@@ -16,6 +16,13 @@ module.exports = {
         text: "Installing",
         href: "install.js",
       }]
+    } else if (running.reset) {
+      return [{
+        default: true,
+        icon: 'fa-solid fa-terminal',
+        text: "Resetting",
+        href: "reset.js",
+      }]
     } else if (installed) {
       if (running.start) {
         let local = info.local("start.js")
@@ -44,13 +51,6 @@ module.exports = {
           icon: 'fa-solid fa-terminal',
           text: "Updating",
           href: "update.js",
-        }]
-      } else if (running.reset) {
-        return [{
-          default: true,
-          icon: 'fa-solid fa-terminal',
-          text: "Resetting",
-          href: "reset.js",
         }]
       } else if (running.link) {
         return [{
