@@ -130,3 +130,14 @@ def test_cli_overrides_environment_and_applies_model_path(monkeypatch):
     assert captured["server_port"] == 8123
     assert "css" in captured and "theme" in captured
     assert app.MODELS["tts"] == "custom/model"
+
+
+def test_auto_quantization_logs_decision_once(monkeypatch, capsys):
+    monkeypatch.setattr(quant, "_LAST_AUTO_NOTE", None)
+    monkeypatch.setenv("MOSS_TTS_QUANTIZATION", "auto")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(quant, "bitsandbytes_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda device: SimpleNamespace(total_memory=8 * 1024**3))
+    for _ in range(3):
+        assert quant.resolve_quantization(torch.device("cuda:0")) == "4bit"
+    assert capsys.readouterr().out.count("[quantization] auto") == 1

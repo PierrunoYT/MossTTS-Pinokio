@@ -22,6 +22,17 @@ _8BIT_ALIASES = {"8bit", "int8"}
 # means "fall back to the CLI/env configuration". Takes precedence over the env var.
 _OVERRIDE: str | None = None
 
+# Last ``auto`` decision logged. ``resolve_quantization`` runs on every model
+# lookup (cache hits included), so only print when the decision changes.
+_LAST_AUTO_NOTE: str | None = None
+
+
+def _note_auto(message: str) -> None:
+    global _LAST_AUTO_NOTE
+    if message != _LAST_AUTO_NOTE:
+        _LAST_AUTO_NOTE = message
+        print(message)
+
 
 def set_quantization_override(mode: str | None) -> str:
     """Set (or clear with ``None``) the runtime quantization mode and return the
@@ -52,7 +63,7 @@ def _auto_quantization(device=None) -> str:
     if not torch.cuda.is_available() or (device is not None and device.type != "cuda"):
         return "none"
     if not bitsandbytes_available():
-        print(
+        _note_auto(
             "  [quantization] auto: bitsandbytes not installed — running in bf16. "
             "Install it (`pip install bitsandbytes`) to enable 4-bit."
         )
@@ -62,9 +73,9 @@ def _auto_quantization(device=None) -> str:
     except Exception:
         return "none"
     if total_gb <= AUTO_QUANT_VRAM_THRESHOLD_GB:
-        print(f"  [quantization] auto: {total_gb:.0f} GB GPU → using 4-bit (nf4).")
+        _note_auto(f"  [quantization] auto: {total_gb:.0f} GB GPU → using 4-bit (nf4).")
         return "4bit"
-    print(f"  [quantization] auto: {total_gb:.0f} GB GPU → bf16 (no quantization).")
+    _note_auto(f"  [quantization] auto: {total_gb:.0f} GB GPU → bf16 (no quantization).")
     return "none"
 
 
