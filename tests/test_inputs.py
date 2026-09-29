@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from tabs import sound_effect, tts, ttsd, voice_gen
+from tabs import realtime, sound_effect, tts, ttsd, voice_gen
 from utils import parse_port
 
 
@@ -74,3 +74,17 @@ def test_ttsd_reference_audio_is_capped(tmp_path):
     wav, sr = ttsd._load_reference_wav(str(long_ref), 1)
     assert sr == 100
     assert wav.shape == (1, int(ttsd.MAX_REFERENCE_DURATION_SEC * 100))
+
+
+def test_realtime_frees_memory_when_generation_fails(monkeypatch):
+    class Inferencer:
+        def generate(self, **kwargs):
+            raise RuntimeError("CUDA out of memory")
+
+    device = torch.device("cpu")
+    freed = []
+    monkeypatch.setattr(realtime, "load_realtime_model", lambda *a, **k: (Inferencer(), None, device, 24000))
+    monkeypatch.setattr(realtime, "free_after_generation", freed.append)
+    audio, status = realtime.run_realtime_inference("Hi", None, 0.8, 0.6, 30, 1.1, 50, 5000, "cpu", "eager")
+    assert audio is None and "out of memory" in status
+    assert freed == [device]

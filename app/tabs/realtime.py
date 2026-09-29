@@ -7,7 +7,7 @@ import gradio as gr
 import numpy as np
 import torch
 
-from core import load_realtime_model
+from core import audio_to_int16, load_realtime_model
 from core.download import download_model_files_for_keys
 from core.memory import free_after_generation
 
@@ -31,6 +31,7 @@ def run_realtime_inference(
     device: str,
     attn_implementation: str,
 ) -> Tuple[Optional[Tuple[int, np.ndarray]], str]:
+    dev = None
     try:
         if not text or not text.strip():
             return None, "❌ Error: Please enter text to synthesize"
@@ -64,18 +65,18 @@ def run_realtime_inference(
         if not wav_chunks:
             return None, "❌ Error: No audio generated"
 
-        audio = torch.cat(wav_chunks, dim=-1)
-        audio_np = audio.squeeze().float().cpu().numpy()
-        free_after_generation(dev)
-        # int16 avoids Gradio's float32→int16 conversion warning; clip to [-1, 1] first
-        audio_np = np.clip(audio_np, -1.0, 1.0)
-        audio_i16 = (audio_np * 32767.0).astype(np.int16)
+        audio_i16 = audio_to_int16(torch.cat(wav_chunks, dim=-1))
         return (sample_rate, audio_i16), "✅ Realtime generation completed!"
 
     except Exception as e:
         error_msg = f"❌ Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
         print(error_msg)
         return None, error_msg
+    finally:
+        # Release the KV cache / decode buffers even when generation fails
+        # (e.g. OOM), so the next request doesn't start with pinned VRAM.
+        if dev is not None:
+            free_after_generation(dev)
 
 
 def _download_realtime_models() -> str:
