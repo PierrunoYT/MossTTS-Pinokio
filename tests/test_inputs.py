@@ -64,3 +64,13 @@ def test_tts_download_fetches_only_selected_variant(monkeypatch, variant, key):
     monkeypatch.setattr(tts, "download_model_files_for_keys", lambda keys: requested.append(keys) or "ok")
     assert tts._download_tts_model(variant) == "ok"
     assert requested == [[key]]
+
+
+def test_ttsd_reference_audio_is_capped(tmp_path):
+    import soundfile as sf
+
+    long_ref = tmp_path / "long.wav"
+    sf.write(long_ref, np.zeros(int(ttsd.MAX_REFERENCE_DURATION_SEC * 100) + 500), 100)
+    wav, sr = ttsd._load_reference_wav(str(long_ref), 1)
+    assert sr == 100
+    assert wav.shape == (1, int(ttsd.MAX_REFERENCE_DURATION_SEC * 100))

@@ -24,6 +24,7 @@ import gradio as gr
 import numpy as np
 import torch
 
+from config import MAX_REFERENCE_DURATION_SEC
 from core import (
     Sampling,
     generate_and_decode,
@@ -156,6 +157,20 @@ def normalize_text(text: str) -> str:
 
 
 # Audio loading/resampling are provided by ``core.audio`` (load_audio, resample_wav).
+
+
+def _load_reference_wav(path: str, speaker_id: int) -> Tuple[torch.Tensor, int]:
+    """Load a speaker reference, capped at ``MAX_REFERENCE_DURATION_SEC`` so a long
+    upload can't blow up the audio tokenizer's O(L²) attention (as in the TTS tab)."""
+    wav, sr = load_audio(path)
+    max_samples = int(MAX_REFERENCE_DURATION_SEC * sr)
+    if wav.shape[-1] > max_samples:
+        print(
+            f"⚠️  S{speaker_id} reference audio is {wav.shape[-1] / sr:.1f}s — truncating to "
+            f"{MAX_REFERENCE_DURATION_SEC:.0f}s to avoid GPU OOM in the audio tokenizer."
+        )
+        wav = wav[..., :max_samples]
+    return wav, sr
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +368,7 @@ def run_ttsd_inference(
             if has_reference:
                 speaker_id = idx + 1
                 cloned_speakers.append(speaker_id)
-                loaded_clone_wavs.append(load_audio(str(ref_audio)))
+                loaded_clone_wavs.append(_load_reference_wav(str(ref_audio), speaker_id))
                 prompt_text_map[speaker_id] = _normalize_prompt_text(
                     prompt_text, speaker_id
                 )
