@@ -110,13 +110,12 @@ ZH_TOKENS_PER_CHAR = 3.098411951313033
 EN_TOKENS_PER_CHAR = 0.8673376262755219
 
 # ---------------------------------------------------------------------------
-# Example asset paths (mirrors the HF Space layout)
+# Example asset paths (shipped by the MOSS-TTS repo that install.js clones)
 # ---------------------------------------------------------------------------
 
-REFERENCE_AUDIO_DIR = Path(__file__).resolve().parent / "assets" / "audio"
-EXAMPLE_TEXTS_JSONL_PATH = (
-    Path(__file__).resolve().parent / "assets" / "text" / "moss_tts_example_texts.jsonl"
-)
+_MOSS_TTS_ASSETS_DIR = Path(__file__).resolve().parent / "MOSS-TTS" / "assets"
+REFERENCE_AUDIO_DIR = _MOSS_TTS_ASSETS_DIR / "audio"
+EXAMPLE_TEXTS_JSONL_PATH = _MOSS_TTS_ASSETS_DIR / "text" / "moss_tts_example_texts.jsonl"
 
 # ---------------------------------------------------------------------------
 # Misc
