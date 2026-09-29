@@ -1,4 +1,4 @@
-# MOSS-TTS - torch/torchaudio/torchcodec installed by torch.js
+# MOSS-TTS - torch/torchvision/torchaudio are installed per-platform by torch.js
 
 # Transformers & Model Loading
 transformers>=5.0.0
