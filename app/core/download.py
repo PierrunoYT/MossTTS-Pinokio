@@ -35,11 +35,20 @@ def _download_with_retries(repo_id: str):
     directory path.
     """
     from huggingface_hub import snapshot_download
+    from huggingface_hub.errors import (
+        EntryNotFoundError,
+        RepositoryNotFoundError,
+        RevisionNotFoundError,
+    )
 
     local_dir = _local_dir_for(repo_id)
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
             return snapshot_download(repo_id, local_dir=local_dir)
+        except (RepositoryNotFoundError, RevisionNotFoundError, EntryNotFoundError):
+            # Missing/gated repos won't fix themselves; fail now instead of
+            # sleeping through every retry first. (GatedRepoError is a subclass.)
+            raise
         except Exception as exc:
             if attempt == _MAX_ATTEMPTS:
                 raise

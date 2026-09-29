@@ -74,3 +74,37 @@ def test_nano_shares_eviction_budget(monkeypatch):
     memory.unload_all_models()
     assert nano._load_nano_runtime("cpu") is not loaded
     memory.unload_all_models()
+
+
+def test_permanent_download_errors_are_not_retried(monkeypatch):
+    import huggingface_hub
+    from huggingface_hub.errors import RepositoryNotFoundError
+
+    calls = []
+
+    def missing(repo_id, **kwargs):
+        calls.append(repo_id)
+        raise RepositoryNotFoundError("404 Repository Not Found", response=MagicMock())
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", missing)
+    monkeypatch.setattr(download.time, "sleep", lambda s: pytest.fail("retried a permanent error"))
+    with pytest.raises(RepositoryNotFoundError):
+        download._download_with_retries("Org/Missing")
+    assert calls == ["Org/Missing"]
+
+
+def test_transient_download_errors_are_retried(monkeypatch):
+    import huggingface_hub
+
+    attempts = []
+
+    def flaky(repo_id, **kwargs):
+        attempts.append(repo_id)
+        if len(attempts) < 3:
+            raise ConnectionError("reset by peer")
+        return "/local/dir"
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", flaky)
+    monkeypatch.setattr(download.time, "sleep", lambda s: None)
+    assert download._download_with_retries("Org/Model") == "/local/dir"
+    assert len(attempts) == 3
