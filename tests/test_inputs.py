@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from tabs import sound_effect, ttsd, voice_gen
+from tabs import sound_effect, tts, ttsd, voice_gen
 from utils import parse_port
 
 
@@ -56,3 +56,11 @@ def test_reference_prompt_rejects_wrong_speaker():
 @pytest.mark.parametrize("value,expected", [("-1", 7860), ("65536", 7860), ("0", 7860), ("bad", 7860), ("8123", 8123)])
 def test_port_validation(value, expected):
     assert parse_port(value, 7860) == expected
+
+
+@pytest.mark.parametrize("variant,key", [(tts.TTS_VARIANT_V15, "tts"), (tts.TTS_VARIANT_LOCAL, "tts_local")])
+def test_tts_download_fetches_only_selected_variant(monkeypatch, variant, key):
+    requested = []
+    monkeypatch.setattr(tts, "download_model_files_for_keys", lambda keys: requested.append(keys) or "ok")
+    assert tts._download_tts_model(variant) == "ok"
+    assert requested == [[key]]

@@ -59,6 +59,10 @@ _INSERT_PAUSE_JS = """
 # Inference
 # ---------------------------------------------------------------------------
 
+def _model_key_for(model_variant: str) -> str:
+    return "tts_local" if model_variant == TTS_VARIANT_LOCAL else "tts"
+
+
 def run_tts_inference(
     text: str,
     reference_audio: Optional[str],
@@ -81,7 +85,7 @@ def run_tts_inference(
         if not text or not text.strip():
             return None, "❌ Error: Please enter text to synthesize"
 
-        model_key = "tts_local" if model_variant == TTS_VARIANT_LOCAL else "tts"
+        model_key = _model_key_for(model_variant)
         model, processor, dev, sample_rate = load_model(model_key, device, attn_implementation)
 
         language_tag = None
@@ -140,10 +144,10 @@ def run_tts_inference(
         return None, error_msg
 
 
-def _download_tts_model(_model_variant: str) -> str:
-    """Prefetch both tab variants and the shared MOSS-Audio-Tokenizer (codec) repo."""
+def _download_tts_model(model_variant: str) -> str:
+    """Prefetch the selected variant and the shared MOSS-Audio-Tokenizer (codec) repo."""
     try:
-        return download_model_files_for_keys(["tts", "tts_local"])
+        return download_model_files_for_keys([_model_key_for(model_variant)])
     except Exception as e:
         return f"❌ Download failed: {e}"
 
