@@ -18,7 +18,7 @@ A unified web interface combining all MOSS-TTS models into a single application 
 
 ## Quick Start with Pinokio
 
-This application is packaged for [Pinokio](https://pinokio.com/) for one-click installation and management.
+This application is packaged for [Pinokio](https://pinokio.co/) for one-click installation and management.
 
 **Available Commands:**
 - **Install** - Sets up Python environment, installs dependencies, and configures PyTorch for your GPU
